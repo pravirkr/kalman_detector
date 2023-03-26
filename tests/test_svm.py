@@ -1,0 +1,89 @@
+import numpy as np
+
+from kalman_detector.svm import State
+
+
+class TestKalmanSVM(object):
+    def test_init_state(self):
+        rng = np.random.default_rng()
+        d0, d1, var_0, var_1, var_t  = rng.random(5)
+        x_vec = rng.normal(0, 1, [100, 2])
+        num_result = (
+            np.exp(
+                -0.5
+                * (
+                    (x_vec[:, 0] - d0) ** 2 / var_0
+                    + (x_vec[:, 1] - d1) ** 2 / var_1
+                    + (x_vec[:, 0] - x_vec[:, 1]) ** 2 / var_t
+                )
+            )
+            / (2 * np.pi) ** (3 / 2)
+            / (var_0 * var_1 * var_t) ** 0.5
+        )
+        
+        state = State.init_from_data(d0, d1, var_0, var_1, var_t)
+        return np.testing.assert_array_almost_equal(state.apply(x_vec), num_result, decimal=10)
+
+
+    def test_init_state_f01(self):
+        rng = np.random.default_rng()
+        d0, d1, var_0, var_1, var_t, e0, v0  = rng.random(7)
+        x_vec = rng.normal(0, 1, [100, 2])
+        num_result = (
+            np.exp(
+                -0.5
+                * (
+                    (x_vec[:, 0] - d0) ** 2 / var_0
+                    + (x_vec[:, 1] - d1) ** 2 / var_1
+                    + (x_vec[:, 0] - x_vec[:, 1]) ** 2 / var_t
+                    + (x_vec[:, 0] - e0) ** 2 / v0
+                )
+            )
+            / (2 * np.pi) ** (4 / 2)
+            / (var_0 * var_1 * var_t * v0) ** 0.5
+        )
+
+        state = State.init_from_data_f01(d0, d1, var_0, var_1, var_t, e0, v0)
+        return np.testing.assert_array_almost_equal(state.apply(x_vec), num_result, decimal=10)
+
+
+    def test_addition_rule(self):
+        rng = np.random.default_rng()
+        d0, d1, d2, d3, var_0, var_1, var_2, var_3, var_t  = rng.random(9)
+
+        state0 = State.init_from_data(d0, d1, var_0, var_1, var_t)
+        state1 = State.init_from_data(d2, d3, var_2, var_3, var_t)
+        final_state = state0 + state1
+
+        sig1 = var_1**0.5
+        sig2 = var_2**0.5
+        dx1 = sig1 / 10
+        dx2 = sig2 / 10
+
+        num_result = np.zeros([10, 10])
+        x0_vec = rng.normal(0, 1, 10)
+        x3_vec = rng.normal(0, 1, 10)
+        grid_03 = [
+            (x0_vec[i], x3_vec[j]) for i in range(len(x0_vec)) for j in range(len(x3_vec))
+        ]
+
+        for i, x0 in enumerate(x0_vec):
+            for j, x3 in enumerate(x3_vec):
+                grid_x1, grid_x2 = np.mgrid[
+                    d1 - 5 * sig1 : d1 + 5 * sig1 : dx1, d2 - 5 * sig2 : d2 + 5 * sig2 : dx2
+                ]
+                inp0 = np.vstack([np.ones(np.prod(grid_x1.shape)) * x0, grid_x1.flatten()]).T
+                inp1 = np.vstack([grid_x2.flatten(), np.ones(np.prod(grid_x1.shape)) * x3]).T
+                num_result[i, j] += (
+                    np.sum(
+                        state0.apply(inp0)
+                        * state1.apply(inp1)
+                        * np.exp(-((inp0[:, 1] - inp1[:, 0]) ** 2) / (2 * var_t))
+                    )
+                    / (2 * np.pi * var_t) ** 0.5
+                    * dx1
+                    * dx2
+                )
+
+        state_result = final_state.apply(grid_03).reshape([len(x0_vec), len(x3_vec)])
+        return np.testing.assert_array_almost_equal(state_result, num_result, decimal=10)
