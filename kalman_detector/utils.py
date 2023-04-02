@@ -27,7 +27,7 @@ def add_noise(spec, spec_std, current_snr, target_snr):
     ) ** 0.5
     spec_noise = spec + np.random.normal(0, needed_std, len(spec))
     spec_std_noise = (spec_std**2 + needed_std**2) ** 0.5
-    return spec_std_noise, spec_noise
+    return spec_noise, spec_std_noise
 
 
 def normalize_spectrum(spec, spec_std, chan_mask=None):
