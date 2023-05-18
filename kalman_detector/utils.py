@@ -25,9 +25,9 @@ def add_noise(
         Noise added spectrum and spectrum noise.
     """
     current_variance = np.sum(spec_std**2) / len(spec_std)
-    needed_std = (
+    needed_std = np.sqrt(
         (current_snr**2 - target_snr**2) * current_variance / target_snr**2
-    ) ** 0.5
+    )
     spec_noise = spec + np.random.normal(0, needed_std, len(spec))
     spec_std_noise = (spec_std**2 + needed_std**2) ** 0.5
     return spec_noise, spec_std_noise

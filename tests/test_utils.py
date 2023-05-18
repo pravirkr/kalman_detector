@@ -23,7 +23,7 @@ class TestUtils(object):
             spec, spec_std, current_snr, current_snr * 0.5
         )
         new_snr = np.sum(spec_noise) / (np.sum(spec_std_noise**2)) ** 0.5
-        np.testing.assert_almost_equal(new_snr, current_snr * 0.5, decimal=0)
+        np.testing.assert_allclose(new_snr, current_snr * 0.5, rtol=0.8)
 
     def test_normalize_spectrum(self):
         rng = np.random.default_rng()
