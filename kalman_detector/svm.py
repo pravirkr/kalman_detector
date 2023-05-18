@@ -1,29 +1,30 @@
+from __future__ import annotations
 import numpy as np
 import sympy as sp
 
 from dataclasses import dataclass
 
 
-def collect2(expr, v1, p1, v2, p2):
+def collect2(expr: sp.Expr, v1: sp.Symbol, p1: int, v2: sp.Symbol, p2: int) -> sp.Expr:
     """Collects the coefficient of v1**p1 and v2**p2 in expr.
 
     Parameters
     ----------
-    expr : _type_
-        Expression to collect.
-    v1 : _type_
-        Variable 1.
-    p1 : _type_
-        Power 1.
-    v2 : _type_
-        Variable 2.
-    p2 : _type_
-        Power 2.
+    expr : sp.Expr
+        The expression in which to collect the coefficients.
+    v1 : sp.Symbol
+        The variable for which to collect the coefficient.
+    p1 : int
+        The power of the variable v1 for which to collect the coefficient.
+    v2 : sp.Symbol
+        The variable for which to collect the coefficient.
+    p2 : int
+        The power of the variable v2 for which to collect the coefficient.
 
     Returns
     -------
-    _type_
-        Coefficient of v1**p1 and v2**p2 in expr.
+    sp.Expr
+        The coefficient of v1**p1 and v2**p2 in expr.
     """
     return expr.expand().collect(v1).coeff(v1, p1).collect(v2).coeff(v2, p2)
 
@@ -97,11 +98,6 @@ def derive_addition_rule():
 class State:
     """Complex State of the Binary Kalman.
 
-    Returns
-    -------
-    _type_
-        Complex State of the Binary Kalman.
-
     Parameters
     ----------
     log_s : float
@@ -116,7 +112,7 @@ class State:
     Notes
     -----
     Implements the distribution of
-    int(dydz * exp(- 0.5*((x,y) - v1)^t A ((x,y) - v1) * exp(- 0.5*((x,y) - v1)^t A ((x,y) - v1) * 0.5*exp(y-z)**2/V)).
+    int(dydz * exp(- 0.5*((x,y) - v0)^t A0 ((x,y) - v0) * exp(- 0.5*((z,w) - v1)^t A1 ((z,w) - v1) * 0.5*exp(y-z)**2/V)).
     Assumes that M1,M2 are diagonal matrices. Assumption is wrong!
     """
 
@@ -126,20 +122,21 @@ class State:
     var_t: float = 0
 
     @property
-    def s_t(self):
+    def s_t(self) -> float:
+        """Returns the standard deviation of the transition."""
         return self.var_t**0.5
 
-    def apply(self, x_arr):
+    def apply(self, x_arr: np.ndarray) -> np.ndarray:
         """Evaluates the SVM distribution for given signal model A.
 
         Parameters
         ----------
-        x_arr : _type_
+        x_arr : np.ndarray
             Signal model A.
 
         Returns
         -------
-        _type_
+        np.ndarray
             SVM distribution evaluated for given signal model A.
         """
         return np.array(
@@ -158,25 +155,27 @@ class State:
         )
 
     @classmethod
-    def init_from_data(cls, d0, d1, var_0, var_1, var_t):
+    def init_from_data(
+        cls, d0: float, d1: float, var_0: float, var_1: float, var_t: float
+    ) -> State:
         """Initializes the state for a pair of frequency channels.
 
         Parameters
         ----------
-        d0 : _type_
+        d0 : float
             Observed spectrum for the first frequency channel.
-        d1 : _type_
+        d1 : float
             Observed spectrum for the second frequency channel.
-        var_0 : _type_
+        var_0 : float
             Variance of the first frequency channel.
-        var_1 : _type_
+        var_1 : float
             Variance of the second frequency channel.
-        var_t : _type_
+        var_t : float
             Variance of the state transition between two frequency channels.
 
         Returns
         -------
-        _type_
+        State
             Initialized state.
         """
         m_init = np.array(
@@ -195,29 +194,38 @@ class State:
         return cls(np.log(s_init), m_init, v_init, var_t)
 
     @classmethod
-    def init_from_data_f01(cls, d0, d1, var_0, var_1, var_t, e0, v0):
+    def init_from_data_f01(
+        cls,
+        d0: float,
+        d1: float,
+        var_0: float,
+        var_1: float,
+        var_t: float,
+        e0: float,
+        v0: float,
+    ) -> State:
         """Initializes the state for the first two frequency channels.
 
         Parameters
         ----------
-        d0 : _type_
+        d0 : float
             Observed spectrum for the first frequency channel.
-        d1 : _type_
+        d1 : float
             Observed spectrum for the second frequency channel.
-        var_0 : _type_
+        var_0 : float
             Variance of the first frequency channel.
-        var_1 : _type_
+        var_1 : float
             Variance of the second frequency channel.
-        var_t : _type_
+        var_t : float
             Variance of the state transition between two frequency channels.
-        e0 : _type_
+        e0 : float
             Expected value of the first hiden state A0.
-        v0 : _type_
+        v0 : float
             Variance of the first hiden state A0.
 
         Returns
         -------
-        _type_
+        State
             Initialized state.
         """
         m_init = np.array(
@@ -239,7 +247,7 @@ class State:
         )
         return cls(np.log(s_init), m_init, v_init, var_t)
 
-    def __add__(self, other):
+    def __add__(self, other: State) -> State:
         M000, M001, M010, M011 = self.m.flatten()
         M100, M101, M110, M111 = other.m.flatten()
         v00, v01 = self.v.flatten()
@@ -375,25 +383,27 @@ class State:
         return State(log_s_res, m_res, v_res, self.var_t)
 
 
-def kalman_binary_compress(spec, spec_std, sig_t, e0, v0):
+def kalman_binary_compress(
+    spec: np.ndarray, spec_std: np.ndarray, sig_t: float, e0: float, v0: float
+) -> State:
     """Kalman binary compression for a spectrum.
 
     Parameters
     ----------
-    spec : _type_
+    spec : np.ndarray
         1D array of spectrum values.
-    spec_std : _type_
+    spec_std : np.ndarray
         1D array of spectrum standard deviations.
-    sig_t : _type_
+    sig_t : float
         Standard deviation of the tranition between states.
-    e0 : _type_
+    e0 : float
         Expected value of the first hidden state A0.
-    v0 : _type_
+    v0 : float
         Variance of the first hidden state A0.
 
     Returns
     -------
-    _type_
+    State
         Final state for the whole spectrum.
     """
     states = []
@@ -416,25 +426,27 @@ def kalman_binary_compress(spec, spec_std, sig_t, e0, v0):
     return states[0]
 
 
-def kalman_binary_hypothesis(spec, spec_std, sig_t, e0, v0):
+def kalman_binary_hypothesis(
+    spec: np.ndarray, spec_std: np.ndarray, sig_t: float, e0: float, v0: float
+) -> float:
     """Calculate the log likelihood ratio of the NP hypothesis test using the binary tree approach.
 
     Parameters
     ----------
-    spec : _type_
+    spec : np.ndarray
         1D array of spectrum values.
-    spec_std : _type_
+    spec_std : np.ndarray
         1D array of spectrum standard deviations.
-    sig_t : _type_
+    sig_t : float
         Standard deviation of the tranition between states.
-    e0 : _type_
+    e0 : float
         Expected value of the first hidden state A0.
-    v0 : _type_
+    v0 : float
         Variance of the first hidden state A0.
 
     Returns
     -------
-    _type_
+    float
         Log likelihood ratio of the NP hypothesis test.
     """
     state = kalman_binary_compress(spec, spec_std, sig_t, e0, v0)

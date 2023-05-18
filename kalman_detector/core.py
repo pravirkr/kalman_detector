@@ -1,31 +1,39 @@
+from __future__ import annotations
 import numpy as np
 from numba import jit
 
 
 @jit(nopython=True)
-def kalman_filter(spec, spec_std, sig_t, e0=0, v0=None, chan_mask=None):
+def kalman_filter(
+    spec: np.ndarray,
+    spec_std: np.ndarray,
+    sig_t: float,
+    e0: float = 0,
+    v0: float | None = None,
+    chan_mask: np.ndarray | None = None,
+) -> float:
     """Core calculation of Kalman estimator of input 1d spectrum data.
 
     Number of changes is sqrt(nchan)*sig_t/mean(spec_std). Frequency scale is 1/sig_t**2.
 
     Parameters
     ----------
-    spec : _type_
+    spec : np.ndarray
         1d spectra
-    spec_std : _type_
+    spec_std : np.ndarray
         1d spectra noise
-    sig_t : _type_
-        sets the smoothness scale of model (A) change.
-    e0 : int, optional
+    sig_t : float
+        transition standard deviation. Sets the smoothness scale of model (A) change.
+    e0 : float
         initial guess of model expectation value in first channel, by default 0
-    v0 : _type_, optional
+    v0 : float, optional
         initial guess of model standard deviation in first channel, by default None
-    chan_mask : _type_, optional
+    chan_mask : np.ndarray, optional
         mask of channels to ignore, by default None
 
     Returns
     -------
-    _type_
+    float
         score, which is the likelihood of presence of signal.
     """
     if v0 is None:
