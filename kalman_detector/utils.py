@@ -1,25 +1,28 @@
+from __future__ import annotations
 import numpy as np
 from scipy import stats
 
 
-def add_noise(spec, spec_std, current_snr, target_snr):
+def add_noise(
+    spec: np.ndarray, spec_std: np.ndarray, current_snr: float, target_snr: float
+) -> tuple[np.ndarray, np.ndarray]:
     """Add noise to spectrum to achieve target_snr.
 
     Parameters
     ----------
-    spec : _type_
+    spec : np.ndarray
         1d spectra
-    spec_std : _type_
+    spec_std : np.ndarray
         1d spectra noise
-    current_snr : _type_
+    current_snr : float
         Current S/N of the spectrum.
-    target_snr : _type_
+    target_snr : float
         Target S/N of the spectrum.
 
     Returns
     -------
-    _type_
-        Noise added spectrum.
+    tuple[np.ndarray, np.ndarray]
+        Noise added spectrum and spectrum noise.
     """
     current_variance = np.sum(spec_std**2) / len(spec_std)
     needed_std = (
@@ -30,22 +33,24 @@ def add_noise(spec, spec_std, current_snr, target_snr):
     return spec_noise, spec_std_noise
 
 
-def normalize_spectrum(spec, spec_std, chan_mask=None):
+def normalize_spectrum(
+    spec: np.ndarray, spec_std: np.ndarray, chan_mask: np.ndarray | None = None
+) -> np.ndarray:
     """Normalize spectrum to zero mean. Likelihood calc expects zero mean spec
 
     Parameters
     ----------
-    spec : _type_
-        _description_
-    spec_std : _type_
-        _description_
-    chan_mask : _type_, optional
-        _description_, by default None
+    spec : np.ndarray
+        1d spectra
+    spec_std : np.ndarray
+        1d spectra noise
+    chan_mask : np.ndarray, optional
+        Mask of channels to ignore, by default None
 
     Returns
     -------
-    _type_
-        _description_
+    np.ndarray
+        Normalized spectrum.
     """
     if chan_mask is None:
         chan_mask = np.zeros(len(spec), dtype=bool)
@@ -54,17 +59,17 @@ def normalize_spectrum(spec, spec_std, chan_mask=None):
     return norm_spec
 
 
-def get_snr_from_logsf(logsf):
+def get_snr_from_logsf(logsf: float) -> float:
     """Get S/N from log of significance.
 
     Parameters
     ----------
-    logsf : _type_
+    logsf : float
         log of significance
 
     Returns
     -------
-    _type_
+    float
         S/N
 
     Notes
@@ -78,25 +83,27 @@ def get_snr_from_logsf(logsf):
     return stats.norm.isf(np.exp(logsf))
 
 
-def simulate_1d_gaussian_process(mean, noise_std, nchan, corr_len, amp):
+def simulate_1d_gaussian_process(
+    mean: float, noise_std: float, nchan: int, corr_len: float, amp: float
+) -> np.ndarray:
     """Simulate 1d Gaussian process.
 
     Parameters
     ----------
-    mean : _type_
+    mean : float
         Mean of the noise.
-    noise_std : _type_
+    noise_std : float
         Standard deviation of the noise.
-    nchan : _type_
+    nchan : int
         Number of channels.
-    corr_len : _type_
+    corr_len : float
         Correlation length.
-    amp : _type_
+    amp : float
         Amplitude of the process.
 
     Returns
     -------
-    _type_
+    np.ndarray
         Simulated process.
     """
     noise = np.random.normal(mean, noise_std, nchan)
@@ -107,23 +114,25 @@ def simulate_1d_gaussian_process(mean, noise_std, nchan, corr_len, amp):
     return np.abs(signal) + noise
 
 
-def simulate_1d_abs_complex_process(noise_std, nchan, corr_len, snr_int):
+def simulate_1d_abs_complex_process(
+    noise_std: float, nchan: int, corr_len: float, snr_int: float
+) -> np.ndarray:
     """Simulate 1d complex process.
 
     Parameters
     ----------
-    noise_std : _type_
+    noise_std : float
         Noise standard deviation.
-    nchan : _type_
+    nchan : int
         Number of channels.
-    corr_len : _type_
+    corr_len : float
         Correlation length.
-    snr_int : _type_
+    snr_int : float
         S/N of the process.
 
     Returns
     -------
-    _type_
+    np.ndarray
         Simulated process.
     """
     noise = np.random.normal(0, noise_std, nchan)

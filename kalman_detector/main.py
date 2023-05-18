@@ -24,9 +24,9 @@ class KalmanDetector(object):
     Raises
     ------
     ValueError
-        _description_
+        if all values of spec_std are zeros or negligible.
     ValueError
-        _description_
+        if sig_ts is not None and is not a list or numpy array.
 
     Notes
     -----
@@ -36,7 +36,12 @@ class KalmanDetector(object):
 
     q_default = [3, 1, 0.3, 0.1, 0.03, 0.01, 0.003, 0.001]
 
-    def __init__(self, spec_std, sig_ts=None, mask_tol=1e-5):
+    def __init__(
+        self,
+        spec_std: np.ndarray,
+        sig_ts: float | list | None = None,
+        mask_tol: float = 1e-5,
+    ) -> None:
         self._mask_tol = mask_tol
         # Check the values of per-channel standard deviation and mitigate any zero.
         self._mask = np.isclose(spec_std, 0, atol=mask_tol)
@@ -49,44 +54,47 @@ class KalmanDetector(object):
         self._polyfits = None
 
     @property
-    def mask_tol(self):
+    def mask_tol(self) -> float:
+        """The absolute tolerance parameter to flag standard deviation values."""
         return self._mask_tol
 
     @property
-    def mask(self):
+    def mask(self) -> np.ndarray:
+        """The mask of flagged standard deviation values."""
         return self._mask
 
     @property
-    def spec_std(self):
+    def spec_std(self) -> np.ndarray:
+        """The per-channel standard deviation."""
         return self._spec_std
 
     @property
-    def nchans(self):
+    def nchans(self) -> int:
+        """The number of frequency channels."""
         return len(self.spec_std)
 
     @property
-    def transit_sigmas(self):
+    def transit_sigmas(self) -> np.ndarray:
+        """The trial transition standard deviations for the intrinsic markov process."""
         return self._sig_ts
 
     @property
-    def distributions(self):
+    def distributions(self) -> list:
         """Polynomial fits for the tail distribution of the kalman detector."""
         return self._distributions
 
-    def prepare_fits(self, ntrials=10000):
+    def prepare_fits(self, ntrials: int = 10000) -> None:
         """Prepares the polynomial fits for the tail distribution of the kalman detector.
-        Measure kalman significance distribution in pure gaussian noise random data.
 
+        Measure kalman significance distribution in pure gaussian noise random data.
         For each individual sig_t, prepare polynomial fit of the exponential tail of
         the distribution.
 
         Parameters
         ----------
         ntrials : int, optional
-            number of gaussian noise instances to be used, by default 10000,
-            number of random instances to be used in measuring the tail of the kalman detector's distribution
+            number of random instances to be used, by default 10000
         """
-        # ignore zeros, as is done in detector function for real data
         spec_std = self.spec_std[~self.mask]
         with np.printoptions(precision=3, suppress=True):
             print(
@@ -100,18 +108,18 @@ class KalmanDetector(object):
             distributions.append(dist)
         self._distributions = distributions
 
-    def get_significance(self, spec):
+    def get_significance(self, spec: np.ndarray) -> float:
         """Calculates the kalman significance of 1d spectrum in the background noise.
 
         Parameters
         ----------
-        spec : _type_
+        spec : numpy.ndarray
             1d numpy array with the spectrum of the candidate burst.
 
         Returns
         -------
-        _type_
-            _description_
+        float
+            The kalman significance of the candidate burst.
         """
         if len(spec) != self.nchans:
             raise ValueError(
@@ -129,7 +137,7 @@ class KalmanDetector(object):
         # return prob in units of nats = ln(P(D|H1)/P(D|H0)). ignore negative probs
         return -max(0, np.max(significances)) * np.log(2)
 
-    def _get_sig_ts(self, sig_ts):
+    def _get_sig_ts(self, sig_ts: float | list | None = None) -> np.ndarray:
         if sig_ts is None:
             sig_ts = np.sqrt(np.median(self.spec_std) ** 2 * np.array(self.q_default))
         elif isinstance(sig_ts, float):
@@ -137,8 +145,7 @@ class KalmanDetector(object):
         elif isinstance(sig_ts, list):
             sig_ts = np.array(sig_ts)
         else:
-            print("Not sure what to do with sig_ts {0}".format(sig_ts))
-        assert isinstance(sig_ts, np.ndarray)
+            raise ValueError("Not sure what to do with sig_ts {0}".format(sig_ts))
         if not np.all(np.nan_to_num(sig_ts)):
             raise ValueError("sig_ts are nans. Not estimating coeffs.")
         return sig_ts
@@ -149,15 +156,28 @@ class KalmanDistribution(object):
 
     Parameters
     ----------
-    sigma_arr : _type_
+    sigma_arr : numpy.ndarray
         per-channel standard deviation.
-    t_sig : _type_
+    t_sig : float
         transition std for the intrinsic markov process.
     ntrials : int, optional
         number of gaussian noise instances to be used, by default 10000
+    mask_tol : float, optional
+        The absolute tolerance parameter to flag standard deviation values, by default 1e-5
+
+    Raises
+    ------
+    ValueError
+        if all sigma_arr values are zero or negligible.
     """
 
-    def __init__(self, sigma_arr, t_sig, ntrials=10000, mask_tol=1e-5):
+    def __init__(
+        self,
+        sigma_arr: np.ndarray,
+        t_sig: float,
+        ntrials: int = 10000,
+        mask_tol: float = 1e-5,
+    ) -> None:
         self._sigma_arr = sigma_arr
         self._t_sig = t_sig
         self._ntrials = ntrials
@@ -173,45 +193,55 @@ class KalmanDistribution(object):
         self._fit_distribution()
 
     @property
-    def mask_tol(self):
+    def mask_tol(self) -> float:
+        """The absolute tolerance parameter to flag standard deviation values."""
         return self._mask_tol
 
     @property
-    def mask(self):
+    def mask(self) -> np.ndarray:
+        """Mask for the negligible standard deviation values."""
         return self._mask
 
     @property
-    def sigma_arr(self):
+    def sigma_arr(self) -> np.ndarray:
+        """Per-channel standard deviation."""
         return self._sigma_arr
 
     @property
-    def t_sig(self):
+    def t_sig(self) -> float:
+        """Transition std for the intrinsic markov process."""
         return self._t_sig
 
     @property
-    def ntrials(self):
+    def ntrials(self) -> int:
+        """Number of gaussian noise instances to be used."""
         return self._ntrials
 
     @property
-    def nchans(self):
+    def nchans(self) -> int:
+        """Number of frequency channels."""
         return len(self.sigma_arr)
 
     @property
-    def scores(self):
+    def scores(self) -> np.ndarray:
+        """Kalman scores for the gaussian noise instances."""
         return self._scores
 
     @property
-    def theoretical_quantiles(self):
+    def theoretical_quantiles(self) -> np.ndarray:
+        """Theoretical quantiles for the kalman scores fit."""
         return np.arange(3, 10, 0.2)
 
     @property
-    def sample_quantiles(self):
+    def sample_quantiles(self) -> np.ndarray:
+        """Sample quantiles for the kalman scores fit with a scaled exponential."""
         return np.percentile(
             self.scores, 100 * (1 - 2.0 ** (-self.theoretical_quantiles))
         )
 
     @property
-    def polyfit(self):
+    def polyfit(self) -> np.poly1d:
+        """Polynomial fit to the tail of the kalman scores distribution."""
         return self._polyfit
 
     def plot_diagnostic(
@@ -269,11 +299,10 @@ class KalmanDistribution(object):
 
         fig.suptitle(str(self))
         if outfile is not None:
-            plt.savefig(f"kalman_distribution_q_{self.t_sig}.pdf", dpi=dpi)
-            plt.savefig(f"kalman_distribution_q_{self.t_sig}.png", dpi=dpi)
+            plt.savefig(outfile, dpi=dpi)
         return fig
 
-    def _generate(self):
+    def _generate(self) -> None:
         scores = []
         for _itrial in range(self.ntrials):
             random_spec = np.random.normal(0, self.sigma_arr, size=self.nchans)
@@ -286,34 +315,36 @@ class KalmanDistribution(object):
             scores.append(score)
         self._scores = np.array(scores)
 
-    def _fit_distribution(self):
+    def _fit_distribution(self) -> None:
         """Approximating the tail of the distribution as an exponential tail (probably is justified)."""
         self._polyfit = Polynomial.fit(
             self.sample_quantiles, self.theoretical_quantiles, 1
         )
 
-    def __str__(self):
+    def __str__(self) -> str:
         return f"KalmanDistribution(t_sig={self.t_sig:.3f}, ntrials={self.ntrials}, nchans={self.nchans})"
 
-    def __repr__(self):
+    def __repr__(self) -> str:
         return str(self)
 
 
-def secondary_spectrum_cumulative_chi2_score(spectrum, spec_std, mask_tol=1e-5):
-    """_summary_
+def secondary_spectrum_cumulative_chi2_score(
+    spec: np.ndarray, spec_std: np.ndarray, mask_tol: float = 1e-5
+) -> float:
+    """Compute the cumulative-chi2 test statistic on sig.
 
     Parameters
     ----------
-    spectrum : _type_
-        1D array of the observed spectrum A(f) of the candidate FRB.
-    spec_std : _type_
+    spec : numpy.ndarray
+        1D array of the observed spectrum I(f) of the candidate FRB.
+    spec_std : numpy.ndarray
         1D array of the standard deviation of the observed spectrum.
-    mask_tol : _type_, optional
+    mask_tol : float, optional
         The absolute tolerance parameter to flag standard deviation values, by default 1e-5.
 
     Returns
     -------
-    _type_
+    float
         Maximum value of the significance. max_f0 of ln(P(sig|H1,ff0)/P(sig|H0))
 
     Notes
@@ -325,9 +356,9 @@ def secondary_spectrum_cumulative_chi2_score(spectrum, spec_std, mask_tol=1e-5):
     H1: sig(f) ~ N(E,1) + FRB with A(f) that have secondary spectrum (DFT(A(f)) with freq cutoff ff0
     """
     signal = np.divide(
-        spectrum,
+        spec,
         spec_std,
-        out=np.zeros_like(spectrum),
+        out=np.zeros_like(spec),
         where=~np.isclose(spec_std, 0, atol=mask_tol),
     )
     fft_sig = np.abs(np.fft.rfft(signal)) ** 2

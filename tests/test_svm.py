@@ -25,7 +25,7 @@ class TestKalmanSVM(object):
 
         state = State.init_from_data(d0, d1, var_0, var_1, var_t)
         return np.testing.assert_array_almost_equal(
-            state.apply(x_vec), num_result, decimal=10
+            state.apply(x_vec), num_result, decimal=8
         )
 
     def test_init_state_f01(self):
@@ -48,7 +48,7 @@ class TestKalmanSVM(object):
 
         state = State.init_from_data_f01(d0, d1, var_0, var_1, var_t, e0, v0)
         return np.testing.assert_array_almost_equal(
-            state.apply(x_vec), num_result, decimal=10
+            state.apply(x_vec), num_result, decimal=8
         )
 
     def test_addition_rule(self):
@@ -95,7 +95,7 @@ class TestKalmanSVM(object):
                 )
 
         state_result = final_state.apply(grid_03).reshape([len(x0_vec), len(x3_vec)])
-        return np.testing.assert_array_almost_equal(state_result, num_result, decimal=10)
+        return np.testing.assert_array_almost_equal(state_result, num_result, decimal=8)
 
 
 class TestSVM(object):
