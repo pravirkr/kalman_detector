@@ -55,8 +55,7 @@ def normalize_spectrum(
     if chan_mask is None:
         chan_mask = np.zeros(len(spec), dtype=bool)
     spec_mean = np.average(spec[~chan_mask], weights=spec_std[~chan_mask] ** -2)
-    norm_spec = spec - spec_mean
-    return norm_spec
+    return spec - spec_mean
 
 
 def get_snr_from_logsf(logsf: float) -> float:

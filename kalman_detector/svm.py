@@ -406,21 +406,21 @@ def kalman_binary_compress(
     State
         Final state for the whole spectrum.
     """
-    states = []
     var_d = spec_std**2
     var_t = sig_t**2
-    states.append(
-        State.init_from_data_f01(spec[0], spec[1], var_d[0], var_d[1], var_t, e0, v0)
-    )
-    for i in range(2, len(spec), 2):
-        states.append(
-            State.init_from_data(spec[i], spec[i + 1], var_d[i], var_d[i + 1], var_t)
+    states = [
+        State.init_from_data_f01(
+            spec[0], spec[1], var_d[0], var_d[1], var_t, e0, v0
         )
-
+    ]
+    states.extend(
+        State.init_from_data(
+            spec[i], spec[i + 1], var_d[i], var_d[i + 1], var_t
+        )
+        for i in range(2, len(spec), 2)
+    )
     while len(states) > 1:
-        new_states = []
-        for i in range(0, len(states), 2):
-            new_states.append(states[i] + states[i + 1])
+        new_states = [states[i] + states[i + 1] for i in range(0, len(states), 2)]
         states = new_states
 
     return states[0]
