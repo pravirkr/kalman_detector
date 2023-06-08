@@ -113,7 +113,7 @@ class State:
     -----
     Implements the distribution of
     int(dydz * exp(- 0.5*((x,y) - v0)^t A0 ((x,y) - v0) * exp(- 0.5*((z,w) - v1)^t A1 ((z,w) - v1) * 0.5*exp(y-z)**2/V)).
-    Assumes that M1,M2 are diagonal matrices. Assumption is wrong!
+    Assumes that M1, M2 are diagonal matrices.
     """
 
     log_s: float = 0

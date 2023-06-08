@@ -31,8 +31,7 @@ class KalmanDetector(object):
 
     Notes
     -----
-    Zeros in the input spec_std will be flagged. Best for zeros to be similar to those
-    of real spectrum to be used.
+    Zeros in the input spec_std will be flagged.
     """
 
     q_default = [3, 1, 0.3, 0.1, 0.03, 0.01, 0.003, 0.001]
@@ -241,7 +240,7 @@ class KalmanDistribution(object):
         )
 
     @property
-    def polyfit(self) -> np.poly1d:
+    def polyfit(self) -> Polynomial:
         """Polynomial fit to the tail of the kalman scores distribution."""
         return self._polyfit
 

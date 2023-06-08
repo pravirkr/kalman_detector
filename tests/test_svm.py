@@ -8,7 +8,7 @@ from kalman_detector import svm
 class TestKalmanSVM(object):
     def test_init_state(self):
         rng = np.random.default_rng()
-        d0, d1, var_0, var_1, var_t = rng.random(5)
+        d0, d1, var_0, var_1, var_t = rng.random(5) * 2 + 0.5
         x_vec = rng.normal(0, 1, [100, 2])
         num_result = (
             np.exp(
@@ -25,12 +25,12 @@ class TestKalmanSVM(object):
 
         state = State.init_from_data(d0, d1, var_0, var_1, var_t)
         return np.testing.assert_array_almost_equal(
-            state.apply(x_vec), num_result, decimal=8
+            state.apply(x_vec), num_result, decimal=15
         )
 
     def test_init_state_f01(self):
         rng = np.random.default_rng()
-        d0, d1, var_0, var_1, var_t, e0, v0 = rng.random(7)
+        d0, d1, var_0, var_1, var_t, e0, v0 = rng.random(7) * 2 + 0.5
         x_vec = rng.normal(0, 1, [100, 2])
         num_result = (
             np.exp(
@@ -48,12 +48,12 @@ class TestKalmanSVM(object):
 
         state = State.init_from_data_f01(d0, d1, var_0, var_1, var_t, e0, v0)
         return np.testing.assert_array_almost_equal(
-            state.apply(x_vec), num_result, decimal=8
+            state.apply(x_vec), num_result, decimal=15
         )
 
     def test_addition_rule(self):
         rng = np.random.default_rng()
-        d0, d1, d2, d3, var_0, var_1, var_2, var_3, var_t = rng.random(9)
+        d0, d1, d2, d3, var_0, var_1, var_2, var_3, var_t = rng.random(9) * 2 + 0.5
 
         state0 = State.init_from_data(d0, d1, var_0, var_1, var_t)
         state1 = State.init_from_data(d2, d3, var_2, var_3, var_t)
@@ -61,15 +61,12 @@ class TestKalmanSVM(object):
 
         sig1 = var_1**0.5
         sig2 = var_2**0.5
-        dx1 = sig1 / 10
-        dx2 = sig2 / 10
+        dx1 = sig1 / 15
+        dx2 = sig2 / 15
 
         num_result = np.zeros([10, 10])
         x0_vec = rng.normal(0, 1, 10)
         x3_vec = rng.normal(0, 1, 10)
-        grid_03 = [
-            (x0_vec[i], x3_vec[j]) for i in range(len(x0_vec)) for j in range(len(x3_vec))
-        ]
 
         for i, x0 in enumerate(x0_vec):
             for j, x3 in enumerate(x3_vec):
@@ -93,9 +90,11 @@ class TestKalmanSVM(object):
                     * dx1
                     * dx2
                 )
-
+        grid_03 = [
+            (x0_vec[i], x3_vec[j]) for i in range(len(x0_vec)) for j in range(len(x3_vec))
+        ]
         state_result = final_state.apply(grid_03).reshape([len(x0_vec), len(x3_vec)])
-        return np.testing.assert_array_almost_equal(state_result, num_result, decimal=8)
+        return np.testing.assert_array_almost_equal(state_result, num_result, decimal=10)
 
 
 class TestSVM(object):
@@ -114,4 +113,3 @@ class TestSVM(object):
         assert isinstance(M2V2, sp.Matrix)
         assert isinstance(S2_factor, sp.Add)
         assert isinstance(res_mul, sp.Mul)
-        
