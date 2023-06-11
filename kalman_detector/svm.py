@@ -94,6 +94,31 @@ def derive_addition_rule():
     return M2, M2V2, S2_factor, res_mul
 
 
+def derive_addition_rule_simple():
+    M000, M010, M011 = sp.symbols("M000, M010, M011")
+    M100, M110, M111 = sp.symbols("M100, M110, M111")
+    v00, v01 = sp.symbols("v00, v01")
+    v10, v11 = sp.symbols("v10, v11")
+    s_t = sp.var("s_t")
+
+    c = 1 / (M011 * M100 * s_t**2 + M011 + M100)
+    n = sp.Matrix([[M000 - M010**2 / M011, 0], [0, M111 - M110**2 / M100]])
+    q = sp.Matrix(
+        [
+            [M010**2 * M100 / M011, -M010 * M110],
+            [-M010 * M110, M110**2 * M011 / M100],
+        ]
+    )
+    w = sp.Matrix([[v00 + v01 * M011 / M010], [v10 * M100 / M110 + v11]])
+    u = sp.Matrix([[v00], [v11]])
+
+    M2 = n + c * q
+    M2V2 = n @ u + c * q @ w
+    res_mul = sp.sqrt(2 * np.pi * c)
+    S2_factor = -0.5 * (np.squeeze(u.T @ n @ u + c * w.T @ q @ w))
+    return M2, M2V2, S2_factor, res_mul
+
+
 @dataclass
 class State:
     """Complex State of the Binary Kalman.
@@ -154,100 +179,19 @@ class State:
             ]
         )
 
-    @classmethod
-    def init_from_data(
-        cls, d0: float, d1: float, var_0: float, var_1: float, var_t: float
-    ) -> State:
-        """Initializes the state for a pair of frequency channels.
+    def add(self, other: State) -> State:
+        """Adds another state to the current state.
 
         Parameters
         ----------
-        d0 : float
-            Observed spectrum for the first frequency channel.
-        d1 : float
-            Observed spectrum for the second frequency channel.
-        var_0 : float
-            Variance of the first frequency channel.
-        var_1 : float
-            Variance of the second frequency channel.
-        var_t : float
-            Variance of the state transition between two frequency channels.
+        other : State
+            State to be added.
 
         Returns
         -------
         State
-            Initialized state.
+            Sum of the two states.
         """
-        m_init = np.array(
-            [[1 / var_0 + 1 / var_t, -1 / var_t], [-1 / var_t, 1 / var_1 + 1 / var_t]]
-        )
-        v_init = np.linalg.inv(m_init) @ np.array([[d0 / var_0], [d1 / var_1]])
-        s_init = np.squeeze(
-            1
-            / np.sqrt((2 * np.pi) ** 3 * var_0 * var_1 * var_t)
-            * np.exp(
-                0.5 * (v_init.T @ m_init @ v_init)
-                - d0**2 / (2 * var_0)
-                - d1**2 / (2 * var_1)
-            )
-        )
-        return cls(np.log(s_init), m_init, v_init, var_t)
-
-    @classmethod
-    def init_from_data_f01(
-        cls,
-        d0: float,
-        d1: float,
-        var_0: float,
-        var_1: float,
-        var_t: float,
-        e0: float,
-        v0: float,
-    ) -> State:
-        """Initializes the state for the first two frequency channels.
-
-        Parameters
-        ----------
-        d0 : float
-            Observed spectrum for the first frequency channel.
-        d1 : float
-            Observed spectrum for the second frequency channel.
-        var_0 : float
-            Variance of the first frequency channel.
-        var_1 : float
-            Variance of the second frequency channel.
-        var_t : float
-            Variance of the state transition between two frequency channels.
-        e0 : float
-            Expected value of the first hiden state A0.
-        v0 : float
-            Variance of the first hiden state A0.
-
-        Returns
-        -------
-        State
-            Initialized state.
-        """
-        m_init = np.array(
-            [
-                [1 / var_0 + 1 / var_t + 1 / v0, -1 / var_t],
-                [-1 / var_t, 1 / var_1 + 1 / var_t],
-            ]
-        )
-        v_init = np.linalg.inv(m_init) @ np.array([[d0 / var_0 + e0 / v0], [d1 / var_1]])
-        s_init = np.squeeze(
-            1
-            / np.sqrt((2 * np.pi) ** 4 * var_0 * var_1 * var_t * v0)
-            * np.exp(
-                0.5 * (v_init.T @ m_init @ v_init)
-                - d0**2 / (2 * var_0)
-                - d1**2 / (2 * var_1)
-                - e0**2 / (2 * v0)
-            )
-        )
-        return cls(np.log(s_init), m_init, v_init, var_t)
-
-    def __add__(self, other: State) -> State:
         M000, M001, M010, M011 = self.m.flatten()
         M100, M101, M110, M111 = other.m.flatten()
         v00, v01 = self.v.flatten()
@@ -381,6 +325,145 @@ class State:
             + 0.5 * np.squeeze(v_res.T @ mv_res)
         )
         return State(log_s_res, m_res, v_res, self.var_t)
+
+    def add_simple(self, other: State) -> State:
+        """Adds another state to the current state.
+
+        Parameters
+        ----------
+        other : State
+            State to be added.
+
+        Returns
+        -------
+        State
+            Sum of the two states.
+        """
+        M000, M001, M010, M011 = self.m.flatten()
+        M100, M101, M110, M111 = other.m.flatten()
+        v00, v01 = self.v.flatten()
+        v10, v11 = other.v.flatten()
+        s_t = self.s_t
+
+        c = 1 / (M011 * M100 * s_t**2 + M011 + M100)
+        n = np.array([[M000 - M010**2 / M011, 0], [0, M111 - M110**2 / M100]])
+        q = np.array(
+            [
+                [M010**2 * M100 / M011, -M010 * M110],
+                [-M010 * M110, M110**2 * M011 / M100],
+            ]
+        )
+        w = np.array([[v00 + v01 * M011 / M010], [v10 * M100 / M110 + v11]])
+        u = np.array([[v00], [v11]])
+
+        m_res = n + c * q
+        mv_res = n @ u + c * q @ w
+        v_res = np.linalg.inv(m_res) @ mv_res
+
+        res_mul = np.sqrt(2 * np.pi * c)
+        log_s_res = (
+            self.log_s
+            + other.log_s
+            + np.log(res_mul)
+            - 0.5 * (np.squeeze(u.T @ n @ u + c * w.T @ q @ w - v_res.T @ mv_res))
+        )
+        return State(log_s_res, m_res, v_res, self.var_t)
+
+    @classmethod
+    def init_from_data(
+        cls, d0: float, d1: float, var_0: float, var_1: float, var_t: float
+    ) -> State:
+        """Initializes the state for a pair of frequency channels.
+
+        Parameters
+        ----------
+        d0 : float
+            Observed spectrum for the first frequency channel.
+        d1 : float
+            Observed spectrum for the second frequency channel.
+        var_0 : float
+            Variance of the first frequency channel.
+        var_1 : float
+            Variance of the second frequency channel.
+        var_t : float
+            Variance of the state transition between two frequency channels.
+
+        Returns
+        -------
+        State
+            Initialized state.
+        """
+        m_init = np.array(
+            [[1 / var_0 + 1 / var_t, -1 / var_t], [-1 / var_t, 1 / var_1 + 1 / var_t]]
+        )
+        v_init = np.linalg.inv(m_init) @ np.array([[d0 / var_0], [d1 / var_1]])
+        s_init = np.squeeze(
+            1
+            / np.sqrt((2 * np.pi) ** 3 * var_0 * var_1 * var_t)
+            * np.exp(
+                0.5 * (v_init.T @ m_init @ v_init)
+                - d0**2 / (2 * var_0)
+                - d1**2 / (2 * var_1)
+            )
+        )
+        return cls(np.log(s_init), m_init, v_init, var_t)
+
+    @classmethod
+    def init_from_data_f01(
+        cls,
+        d0: float,
+        d1: float,
+        var_0: float,
+        var_1: float,
+        var_t: float,
+        e0: float,
+        v0: float,
+    ) -> State:
+        """Initializes the state for the first two frequency channels.
+
+        Parameters
+        ----------
+        d0 : float
+            Observed spectrum for the first frequency channel.
+        d1 : float
+            Observed spectrum for the second frequency channel.
+        var_0 : float
+            Variance of the first frequency channel.
+        var_1 : float
+            Variance of the second frequency channel.
+        var_t : float
+            Variance of the state transition between two frequency channels.
+        e0 : float
+            Expected value of the first hiden state A0.
+        v0 : float
+            Variance of the first hiden state A0.
+
+        Returns
+        -------
+        State
+            Initialized state.
+        """
+        m_init = np.array(
+            [
+                [1 / var_0 + 1 / var_t + 1 / v0, -1 / var_t],
+                [-1 / var_t, 1 / var_1 + 1 / var_t],
+            ]
+        )
+        v_init = np.linalg.inv(m_init) @ np.array([[d0 / var_0 + e0 / v0], [d1 / var_1]])
+        s_init = np.squeeze(
+            1
+            / np.sqrt((2 * np.pi) ** 4 * var_0 * var_1 * var_t * v0)
+            * np.exp(
+                0.5 * (v_init.T @ m_init @ v_init)
+                - d0**2 / (2 * var_0)
+                - d1**2 / (2 * var_1)
+                - e0**2 / (2 * v0)
+            )
+        )
+        return cls(np.log(s_init), m_init, v_init, var_t)
+
+    def __add__(self, other: State) -> State:
+        return self.add(other)
 
 
 def kalman_binary_compress(
