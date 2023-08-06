@@ -2,7 +2,7 @@ from __future__ import annotations
 import numpy as np
 import sympy as sp
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 
 def collect2(expr: sp.Expr, v1: sp.Symbol, p1: int, v2: sp.Symbol, p2: int) -> sp.Expr:
@@ -142,8 +142,8 @@ class State:
     """
 
     log_s: float = 0
-    m: np.ndarray = np.array([[0, 0], [0, 0]])
-    v: np.ndarray = np.array([[0], [0]])
+    m: np.ndarray = field(default_factory=lambda: np.zeros(shape=(2, 2)))
+    v: np.ndarray = field(default_factory=lambda: np.zeros(shape=(2, 1)))
     var_t: float = 0
 
     @property
