@@ -24,9 +24,9 @@ def add_noise(
     tuple[np.ndarray, np.ndarray]
         Noise added spectrum and spectrum noise.
     """
-    current_variance = np.sum(spec_std**2) / len(spec_std)
+    current_variance = np.mean(spec_std**2)
     needed_std = np.sqrt(
-        (current_snr**2 - target_snr**2) * current_variance / target_snr**2
+        current_variance * (current_snr**2 - target_snr**2) / target_snr**2
     )
     spec_noise = spec + np.random.normal(0, needed_std, len(spec))
     spec_std_noise = (spec_std**2 + needed_std**2) ** 0.5
@@ -36,7 +36,7 @@ def add_noise(
 def normalize_spectrum(
     spec: np.ndarray, spec_std: np.ndarray, chan_mask: np.ndarray | None = None
 ) -> np.ndarray:
-    """Normalize spectrum to zero mean. Likelihood calc expects zero mean spec
+    """Normalize spectrum to zero mean. Likelihood calc expects zero mean spec.
 
     Parameters
     ----------
@@ -55,8 +55,36 @@ def normalize_spectrum(
     if chan_mask is None:
         chan_mask = np.zeros(len(spec), dtype=bool)
     spec_mean = np.average(spec[~chan_mask], weights=spec_std[~chan_mask] ** -2)
-    norm_spec = spec - spec_mean
-    return norm_spec
+    return spec - spec_mean
+
+
+def normalize(
+    spec: np.ndarray, spec_std: np.ndarray, spec_mean: np.ndarray | None = None
+) -> np.ndarray:
+    """Normalize spectrum to zero mean and unit std.
+
+    Parameters
+    ----------
+    spec : np.ndarray
+        1d spectra
+    spec_std : np.ndarray
+        1d spectra noise
+    spec_mean : np.ndarray | None, optional
+        Mean of the spectrum, by default None
+
+    Returns
+    -------
+    np.ndarray
+        Normalized spectrum.
+    """
+    if spec_mean is None:
+        spec_mean = np.zeros_like(spec)
+    return np.divide(
+        spec - spec_mean,
+        spec_std,
+        out=np.zeros_like(spec),
+        where=~np.isclose(spec_std, 0, atol=1e-5),
+    )
 
 
 def get_snr_from_logsf(logsf: float) -> float:
@@ -83,65 +111,65 @@ def get_snr_from_logsf(logsf: float) -> float:
     return stats.norm.isf(np.exp(logsf))
 
 
-def simulate_1d_gaussian_process(
-    mean: float, noise_std: float, nchan: int, corr_len: float, amp: float
+def simulate_gaussian_process(
+    noise_std: np.ndarray, corr_len: float, snr_int: float, complex_process: bool = False
 ) -> np.ndarray:
     """Simulate 1d Gaussian process.
 
     Parameters
     ----------
-    mean : float
-        Mean of the noise.
-    noise_std : float
-        Standard deviation of the noise.
-    nchan : int
-        Number of channels.
-    corr_len : float
-        Correlation length.
-    amp : float
-        Amplitude of the process.
-
-    Returns
-    -------
-    np.ndarray
-        Simulated process.
-    """
-    noise = np.random.normal(mean, noise_std, nchan)
-    kernel = np.exp(-np.linspace(-nchan / corr_len, nchan / corr_len, nchan) ** 2)
-    kernel /= np.sum(kernel)
-    base_process = np.random.normal(0, amp / np.sqrt(corr_len), nchan)
-    signal = np.fft.ifft(np.fft.fft(kernel) * np.fft.fft(base_process))
-    return np.abs(signal) + noise
-
-
-def simulate_1d_abs_complex_process(
-    noise_std: float, nchan: int, corr_len: float, snr_int: float
-) -> np.ndarray:
-    """Simulate 1d complex process.
-
-    Parameters
-    ----------
-    noise_std : float
+    noise_std : np.ndarray
         Noise standard deviation.
-    nchan : int
-        Number of channels.
     corr_len : float
         Correlation length.
     snr_int : float
         S/N of the process.
+    complex_process : bool, optional
+        whether to use comlex numbers as the base process, by default False
 
     Returns
     -------
     np.ndarray
-        Simulated process.
+        Simulated array.
     """
-    noise = np.random.normal(0, noise_std, nchan)
-    kernel = np.exp(-np.linspace(-nchan / corr_len, nchan / corr_len, nchan) ** 2)
-    kernel /= np.sum(kernel)
-    base_process = np.random.normal(0, 1 / np.sqrt(corr_len), nchan) + complex(
-        0, 1
-    ) * np.random.normal(0, 1 / np.sqrt(corr_len), nchan)
-    signal = np.fft.ifft(np.fft.fft(kernel) * np.fft.fft(base_process))
-    signal = np.abs(signal)
-    signal = signal / np.mean(signal) * snr_int / nchan**0.5 / noise_std
+    nchans = len(noise_std)
+    rng = np.random.default_rng()
+    kernel = np.exp(-np.linspace(-nchans / corr_len, nchans / corr_len, nchans) ** 2)
+    kernel /= np.dot(kernel, kernel) ** 0.5
+    base_process = rng.normal(0, 1 / np.sqrt(corr_len), nchans)
+    if complex_process:
+        base_process += 1.0j * rng.normal(0, 1 / np.sqrt(corr_len), nchans)
+    signal = np.abs(np.fft.ifft(np.fft.fft(kernel) * np.fft.fft(base_process)))
+    signal = signal / np.sum(signal) * snr_int * (np.sum(noise_std**2)) ** 0.5
+    noise = rng.normal(0, noise_std, nchans)
     return signal + noise
+
+
+class SnrResult(object):
+    def __init__(self, name: str, snr_box: float, sig_kalman: float) -> None:
+        self.name = name
+        self.snr_box = snr_box
+        self.sig_kalman = sig_kalman
+
+    @property
+    def sig_box(self) -> float:
+        return stats.norm.logsf(self.snr_box)
+
+    @property
+    def snr_kalman(self) -> float:
+        return get_snr_from_logsf(self.sig_box + self.sig_kalman)
+
+    def to_dict(self) -> dict[str, float]:
+        return {
+            "name": self.name,
+            "sig_box": self.sig_box,
+            "sig_kalman": self.sig_kalman,
+            "snr_box": self.snr_box,
+            "snr_kalman": self.snr_kalman,
+        }
+
+    def __str__(self) -> str:
+        return (
+            f"{self.name} - Box S/N: {self.snr_box:.1f}, Kalman S/N: {self.snr_kalman:.1f}\n"
+            f"            Box Sig: {-self.sig_box:.1f}, Kalman Sig: {-self.sig_kalman:.1f}"
+        )
