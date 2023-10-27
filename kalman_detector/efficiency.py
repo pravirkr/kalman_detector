@@ -132,9 +132,10 @@ def eff_plot(
 
 if __name__ == "__main__":
     niters = 10000
-
-    template = utils.simulate_gaussian_process(noise_std, corr_len, snr_int, complex_process)
+    nchans = 336
+    corr_len = 300
     freqs = np.arange(0, 335) + 1104
+    template = utils.simulate_gaussian_signal(nchans, corr_len, complex_process=True)
 
     figure = plt.figure(figsize=(5, 5.5), dpi=200)
     grid = figure.add_gridspec(left=0.05, right=0.95, bottom=0.1, top=0.95)

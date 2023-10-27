@@ -111,28 +111,25 @@ def get_snr_from_logsf(logsf: float) -> float:
     return stats.norm.isf(np.exp(logsf))
 
 
-def simulate_gaussian_process(
-    noise_std: np.ndarray, corr_len: float, snr_int: float, complex_process: bool = False
+def simulate_gaussian_signal(
+    nchans: int, corr_len: float, complex_process: bool = False
 ) -> np.ndarray:
     """Simulate 1d Gaussian process.
 
     Parameters
     ----------
-    noise_std : np.ndarray
-        Noise standard deviation.
+    nchans : int
+        Number of frequency channels.
     corr_len : float
-        Correlation length.
-    snr_int : float
-        S/N of the process.
+        Correlation length of the Gaussian process.
     complex_process : bool, optional
         whether to use comlex numbers as the base process, by default False
 
     Returns
     -------
     np.ndarray
-        Simulated array.
+        Normalized mean-subtracted signal array.
     """
-    nchans = len(noise_std)
     rng = np.random.default_rng()
     kernel = np.exp(-np.linspace(-nchans / corr_len, nchans / corr_len, nchans) ** 2)
     kernel /= np.dot(kernel, kernel) ** 0.5
@@ -140,9 +137,8 @@ def simulate_gaussian_process(
     if complex_process:
         base_process += 1.0j * rng.normal(0, 1 / np.sqrt(corr_len), nchans)
     signal = np.abs(np.fft.ifft(np.fft.fft(kernel) * np.fft.fft(base_process)))
-    signal = signal / np.sum(signal) * snr_int * (np.sum(noise_std**2)) ** 0.5
-    noise = rng.normal(0, noise_std, nchans)
-    return signal + noise
+    signal -= np.mean(signal)
+    return signal / np.dot(signal, signal) ** 0.5
 
 
 class SnrResult(object):
