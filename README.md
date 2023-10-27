@@ -7,7 +7,7 @@
 
 Python Implementation of the Kalman filter detector for detecting smoothly variying signals buried in gaussian noise (like Fast Radio Bursts).
 
-The detection statistic is designed to receive X(f), a sequence of observed "amplitudes" (where f is an arbitrary indexed parameter) and decide between:
+The detection statistic is designed to receive I(f), a sequence of observed "amplitudes" (where f is an arbitrary indexed parameter) and decide between:
 
 ```
 H0: I(f) = N(f)         Pure gaussian noise
@@ -31,6 +31,13 @@ kalman = KalmanDetector(spectrum_std)
 kalman.prepare_fits(ntrials=10000)
 kalman.get_significance(spectrum)
 ```
+
+### Efficiency
+
+```python
+python -m kalman_detector.efficiency
+```
+
 ## Citation
 Please cite [Kumar, Zackay & Law (2023)](https://ui.adsabs.harvard.edu/abs/2023arXiv230607914K) if you find this code useful in your research.
 The BibTeX entry for the paper is:
