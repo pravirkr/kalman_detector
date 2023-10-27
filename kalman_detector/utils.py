@@ -133,9 +133,12 @@ def simulate_gaussian_signal(
     rng = np.random.default_rng()
     kernel = np.exp(-np.linspace(-nchans / corr_len, nchans / corr_len, nchans) ** 2)
     kernel /= np.dot(kernel, kernel) ** 0.5
-    base_process = rng.normal(0, 1 / np.sqrt(corr_len), nchans)
     if complex_process:
-        base_process += 1.0j * rng.normal(0, 1 / np.sqrt(corr_len), nchans)
+        base_process = rng.normal(0, 1 / np.sqrt(corr_len), nchans) + 1.0j * rng.normal(
+            0, 1 / np.sqrt(corr_len), nchans
+        )
+    else:
+        base_process = rng.normal(0, 1 / np.sqrt(corr_len), nchans)
     signal = np.abs(np.fft.ifft(np.fft.fft(kernel) * np.fft.fft(base_process)))
     signal -= np.mean(signal)
     return signal / np.dot(signal, signal) ** 0.5

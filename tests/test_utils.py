@@ -41,6 +41,28 @@ class TestUtils(object):
         np.testing.assert_equal(len(spec_norm), len(spec))
         np.testing.assert_almost_equal(normalized_mean, 0, decimal=3)
 
+    def test_normalize(self):
+        rng = np.random.default_rng()
+        spec_mean = rng.normal(50, 5, 1024)
+        spec_std = rng.normal(20, 3, 1024)
+        spec = rng.normal(spec_mean, spec_std, 1024)
+        spec_norm = utils.normalize(spec, spec_std, spec_mean=spec_mean)
+        normalized_mean = np.mean(spec_norm)
+        normalized_std = np.std(spec_norm)
+        np.testing.assert_equal(len(spec_norm), len(spec))
+        np.testing.assert_almost_equal(normalized_mean, 0, decimal=1)
+        np.testing.assert_almost_equal(normalized_std, 1, decimal=1)
+
+    def test_normalize_nomean(self):
+        rng = np.random.default_rng()
+        spec_mean = np.zeros(1024)
+        spec_std = rng.normal(20, 3, 1024)
+        spec = rng.normal(spec_mean, spec_std, 1024)
+        spec_norm = utils.normalize(spec, spec_std)
+        normalized_std = np.std(spec_norm)
+        np.testing.assert_equal(len(spec_norm), len(spec))
+        np.testing.assert_almost_equal(normalized_std, 1, decimal=1)
+
     @pytest.mark.parametrize("sigma", [1, 3, 5, 10, 20, 30])
     def test_get_snr_from_logsf(self, sigma):
         logsf = np.log(stats.norm.sf(sigma))
@@ -53,23 +75,43 @@ class TestUtils(object):
         snr = utils.get_snr_from_logsf(logsf)
         np.testing.assert_almost_equal(snr, sigma, decimal=0)
 
-    def test_simulate_1d_gaussian_process(self):
-        mean = 0.0
-        noise_std = 0.1
-        nchan = 1024
+    def test_simulate_gaussian_signal(self):
+        nchans = 336
         corr_len = 100
-        amp = 1.0
-        process = utils.simulate_1d_gaussian_process(
-            mean, noise_std, nchan, corr_len, amp
-        )
-        np.testing.assert_equal(len(process), nchan)
+        signal = utils.simulate_gaussian_signal(nchans, corr_len)
+        signal_mean = np.mean(signal)
+        np.testing.assert_equal(len(signal), nchans)
+        np.testing.assert_almost_equal(signal_mean, 0, decimal=1)
 
-    def test_simulate_1d_abs_complex_process(self):
-        noise_std = 0.1
-        nchan = 1024
+    def test_simulate_gaussian_signal_complex(self):
+        nchans = 336
         corr_len = 100
-        snr_int = 10
-        process = utils.simulate_1d_abs_complex_process(
-            noise_std, nchan, corr_len, snr_int
-        )
-        np.testing.assert_equal(len(process), nchan)
+        signal = utils.simulate_gaussian_signal(nchans, corr_len, complex_process=True)
+        np.testing.assert_equal(len(signal), nchans)
+        np.testing.assert_almost_equal(np.mean(signal), 0, decimal=1)
+
+
+class TestSnrResult(object):
+    def test_init(self):
+        name = "test"
+        snr_box = 5
+        sig_kalman = 0
+        result = utils.SnrResult(name, snr_box, sig_kalman)
+        np.testing.assert_almost_equal(result.sig_box, stats.norm.logsf(snr_box))
+        np.testing.assert_almost_equal(result.snr_kalman, snr_box)
+
+    def test_to_dict(self):
+        name = "test"
+        snr_box = 5
+        sig_kalman = 10
+        result = utils.SnrResult(name, snr_box, sig_kalman)
+        result_dict = result.to_dict()
+        np.testing.assert_equal(result_dict["name"], name)
+        assert isinstance(result_dict, dict)
+
+    def test_str(self):
+        name = "test"
+        snr_box = 5
+        sig_kalman = 10
+        result = utils.SnrResult(name, snr_box, sig_kalman)
+        assert str(result).startswith("test")

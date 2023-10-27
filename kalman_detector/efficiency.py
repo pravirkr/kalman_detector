@@ -134,15 +134,9 @@ if __name__ == "__main__":
     niters = 10000
     nchans = 336
     corr_len = 300
-    freqs = np.arange(0, 335) + 1104
+    freqs = np.arange(nchans) + 1104
     template = utils.simulate_gaussian_signal(nchans, corr_len, complex_process=True)
 
-    figure = plt.figure(figsize=(5, 5.5), dpi=200)
-    grid = figure.add_gridspec(left=0.05, right=0.95, bottom=0.1, top=0.95)
-    inner_grid = grid[0, 0].subgridspec(
-        nrows=2, ncols=1, hspace=0.24, height_ratios=(2, 1)
-    )
-    ax_prof = plt.subplot(inner_grid[1, 0])
-    ax_eff = plt.subplot(inner_grid[0, 0])
+    fig, (ax_eff, ax_prof) = plt.subplots(2, 1, height_ratios=(2, 1), figsize=(5, 5.5))
     results = eff_plot(template, freqs, ax_eff, ax_prof, niters=niters)
     plt.show()

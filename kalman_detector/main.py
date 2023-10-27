@@ -117,7 +117,7 @@ class KalmanDetector(object):
         Returns
         -------
         float
-            The best kalman significance
+            The best kalman significance in logsf units.
         """
         sigs, scores = self.get_significance(spec)
         return np.min(sigs)
@@ -346,7 +346,7 @@ def secondary_spectrum_cumulative_chi2_score(
     Parameters
     ----------
     spec : numpy.ndarray
-        1D array of the observed spectrum I(f) of the candidate FRB.
+        1d array of the observed spectrum.
     spec_std : numpy.ndarray
         1D array of the standard deviation of the observed spectrum.
     mask_tol : float, optional
@@ -355,7 +355,7 @@ def secondary_spectrum_cumulative_chi2_score(
     Returns
     -------
     float
-        Maximum value of the significance. max_f0 of ln(P(sig|H1,ff0)/P(sig|H0))
+        Best significance in logsf units (max_f0 of ln(P(sig|H1,ff0)/P(sig|H0)))
 
     Notes
     -----
@@ -375,4 +375,4 @@ def secondary_spectrum_cumulative_chi2_score(
     score_arr = np.cumsum(fft_sig[1:] / (len(signal) / 2))
     dof_arr = 2 * np.arange(1, len(score_arr) + 1)
     significance_arr = stats.chi2.logsf(score_arr, dof_arr)
-    return np.max(-significance_arr)
+    return np.min(significance_arr)
