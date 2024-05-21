@@ -1,6 +1,7 @@
 from __future__ import annotations
-from numba import jit
+
 import numpy as np
+from numba import jit
 
 
 @jit(nopython=True)
@@ -21,7 +22,8 @@ def kalman_filter(
     spec_std : np.ndarray
         1d spectra noise std
     sig_eta : float
-        State transition std or Process noise. Sets the smoothness scale of model change.
+        State transition std or Process noise. Sets the smoothness scale of
+        model change.
     e0 : float
         initial guess of model expectation value in first channel, by default 0
     v0 : float, optional
@@ -36,7 +38,8 @@ def kalman_filter(
 
     Notes
     -----
-    Number of changes is sqrt(nchan)*sig_eta/mean(spec_std). Frequency scale is 1/sig_eta**2.
+    Number of changes is sqrt(nchan)*sig_eta/mean(spec_std).
+    Frequency scale is 1/sig_eta**2.
     For details, see Eq. 10--12 in Kumar, Zackay & Law (2023).
     """
     if v0 is None:

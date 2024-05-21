@@ -1,12 +1,15 @@
 from __future__ import annotations
+
+import logging
+from dataclasses import dataclass, field
+
 import numpy as np
 import sympy as sp
 
-from dataclasses import dataclass, field
-
+logger = logging.getLogger(__name__)
 
 def collect2(expr: sp.Expr, v1: sp.Symbol, p1: int, v2: sp.Symbol, p2: int) -> sp.Expr:
-    """Collects the coefficient of v1**p1 and v2**p2 in expr.
+    """Collect the coefficient of v1**p1 and v2**p2 in expr.
 
     Parameters
     ----------
@@ -29,8 +32,8 @@ def collect2(expr: sp.Expr, v1: sp.Symbol, p1: int, v2: sp.Symbol, p2: int) -> s
     return expr.expand().collect(v1).coeff(v1, p1).collect(v2).coeff(v2, p2)
 
 
-def derive_addition_rule():
-    """Derives the addition rule for the Binary Kalman.
+def derive_addition_rule() -> tuple:
+    """Derive the addition rule for the Binary Kalman.
 
     Returns
     -------
@@ -47,7 +50,7 @@ def derive_addition_rule():
     V1 = sp.Matrix([sp.symbols("v10, v11")]).T
     A1 = sp.Matrix([sp.symbols("x10, x11")]).T
 
-    # Dealing with the first Gaussian (Eqn. B20-B21)
+    # Dealing with the first Gaussian (Eqn. B11-B12)
     exp_term0 = -1 / 2 * ((A0 - V0).T * M0 * (A0 - V0)).det()
     exp_term0_expand = sp.collect(exp_term0.expand(), A0[1])
     alpha_0 = -1 / (2 * exp_term0_expand.coeff(A0[1], 2))
@@ -55,9 +58,9 @@ def derive_addition_rule():
     gamma_0 = -(beta_0**2) / alpha_0 - 2 * exp_term0_expand.coeff(A0[1], 0)
 
     pred = -0.5 * ((A0[1] - beta_0) ** 2 / alpha_0 + gamma_0)
-    print("is it zero?", (pred - exp_term0).expand())
+    logger.debug(f"is it zero?: {(pred - exp_term0).expand()}")
 
-    # Dealing with the last Gaussian (Eqn. B23-B24)
+    # Dealing with the last Gaussian (Eqn. B14-B15)
     exp_term1 = -1 / 2 * ((A1 - V1).T * M1 * (A1 - V1)).det()
     exp_term1_expand = sp.collect(exp_term1.expand(), A1[0])
     alpha_1 = -1 / (2 * exp_term1_expand.coeff(A1[0], 2))
@@ -65,21 +68,21 @@ def derive_addition_rule():
     gamma_1 = -(beta_1**2) / alpha_1 - 2 * exp_term1_expand.coeff(A1[0], 0)
 
     pred = -0.5 * ((A1[0] - beta_1) ** 2 / alpha_1 + gamma_1)
-    print("is it zero?", (pred - exp_term1).expand())
+    logger.debug(f"is it zero?: {(pred - exp_term1).expand()}")
 
     # Dealing with the middle Gaussian
     s_t = sp.var("s_t")
 
-    # (Eqn. B29)
+    # Combining terms (Eqn. B19)
     alpha_2 = alpha_0 + alpha_1 + s_t**2
     beta_2 = beta_1 - beta_0
     gamma_2 = gamma_0 + gamma_1
 
-    # (Eqn. B30)
+    # final integral (Eqn. B20)
     res_exp = (-(beta_2**2) / (2 * alpha_2) - gamma_2 / 2).expand()
     res_mul = sp.sqrt((2 * np.pi * alpha_0 * alpha_1) / alpha_2)
 
-    # (After equating coeffecients of Eqn. B30 and B32)
+    # (After equating coeffecients of Eqn. B20 and B22)
     M200 = -2 * collect2(res_exp, A0[0], 2, A1[1], 0)
     M211 = -2 * collect2(res_exp, A0[0], 0, A1[1], 2)
     M210 = -collect2(res_exp, A0[0], 1, A1[1], 1)
@@ -94,7 +97,7 @@ def derive_addition_rule():
     return M2, M2V2, S2_factor, res_mul
 
 
-def derive_addition_rule_simple():
+def derive_addition_rule_simple() -> tuple:
     M000, M010, M011 = sp.symbols("M000, M010, M011")
     M100, M110, M111 = sp.symbols("M100, M110, M111")
     v00, v01 = sp.symbols("v00, v01")
@@ -107,7 +110,7 @@ def derive_addition_rule_simple():
         [
             [M010**2 * M100 / M011, -M010 * M110],
             [-M010 * M110, M110**2 * M011 / M100],
-        ]
+        ],
     )
     w = sp.Matrix([[v00 + v01 * M011 / M010], [v10 * M100 / M110 + v11]])
     u = sp.Matrix([[v00], [v11]])
@@ -137,7 +140,9 @@ class State:
     Notes
     -----
     Implements the distribution of
-    int(dydz * exp(- 0.5*((x,y) - v0)^t A0 ((x,y) - v0) * exp(- 0.5*((z,w) - v1)^t A1 ((z,w) - v1) * 0.5*exp(y-z)**2/V)).
+    int(dydz * exp(-0.5*((x,y) - v0)^t A0 ((x,y) - v0))
+             * exp(-0.5*((z,w) - v1)^t A1 ((z,w) - v1))
+             * exp(-0.5*(z-y)**2/V)).
     Assumes that M1, M2 are diagonal matrices.
     """
 
@@ -152,7 +157,7 @@ class State:
         return self.var_t**0.5
 
     def apply(self, x_arr: np.ndarray) -> np.ndarray:
-        """Evaluates the SVM distribution for given signal model A.
+        """Evaluate the SVM distribution for given signal model A.
 
         Parameters
         ----------
@@ -173,14 +178,14 @@ class State:
                         (x_arr[i] - self.v.squeeze()).T
                         @ self.m
                         @ (x_arr[i] - self.v.squeeze())
-                    )
+                    ),
                 )
                 for i in range(len(x_arr))
-            ]
+            ],
         )
 
     def add(self, other: State) -> State:
-        """Adds another state to the current state.
+        """Add another state to the current state.
 
         Parameters
         ----------
@@ -223,7 +228,7 @@ class State:
                     + M111
                     - 1.0 * M110**2 / M100,
                 ],
-            ]
+            ],
         )
 
         mv_res = np.array(
@@ -245,7 +250,7 @@ class State:
                     * M110
                     * v11
                     / (2 * M011 * M100 * s_t**2 + 2.0 * M011 + 2.0 * M100)
-                    - 2.0 * M010 * v10 / (2 * M011 * s_t**2 + 2.0 * M011 / M100 + 2.0)
+                    - 2.0 * M010 * v10 / (2 * M011 * s_t**2 + 2.0 * M011 / M100 + 2.0),
                 ],
                 [
                     -2.0
@@ -264,9 +269,9 @@ class State:
                     / (2 * M100**2 * s_t**2 + 2.0 * M100 + 2.0 * M100**2 / M011)
                     - 2.0 * M110 * v01 / (2 * M100 * s_t**2 + 2.0 + 2.0 * M100 / M011)
                     + 1.0 * M111 * v11
-                    - 1.0 * M110**2 * v11 / M100
+                    - 1.0 * M110**2 * v11 / M100,
                 ],
-            ]
+            ],
         )
 
         s_factor = (
@@ -314,7 +319,7 @@ class State:
         )
 
         res_mul = np.sqrt(2 * np.pi) * np.sqrt(
-            1 / (M011 * M100 * (s_t**2 + 1.0 / M100 + 1.0 / M011))
+            1 / (M011 * M100 * (s_t**2 + 1.0 / M100 + 1.0 / M011)),
         )
         v_res = np.linalg.inv(m_res) @ mv_res
         log_s_res = (
@@ -327,7 +332,7 @@ class State:
         return State(log_s_res, m_res, v_res, self.var_t)
 
     def add_simple(self, other: State) -> State:
-        """Adds another state to the current state.
+        """Add another state to the current state.
 
         Parameters
         ----------
@@ -351,7 +356,7 @@ class State:
             [
                 [M010**2 * M100 / M011, -M010 * M110],
                 [-M010 * M110, M110**2 * M011 / M100],
-            ]
+            ],
         )
         w = np.array([[v00 + v01 * M011 / M010], [v10 * M100 / M110 + v11]])
         u = np.array([[v00], [v11]])
@@ -371,9 +376,14 @@ class State:
 
     @classmethod
     def init_from_data(
-        cls, d0: float, d1: float, var_0: float, var_1: float, var_t: float
+        cls,
+        d0: float,
+        d1: float,
+        var_0: float,
+        var_1: float,
+        var_t: float,
     ) -> State:
-        """Initializes the state for a pair of frequency channels.
+        """Initialize the state for a pair of frequency channels.
 
         Parameters
         ----------
@@ -394,7 +404,7 @@ class State:
             Initialized state.
         """
         m_init = np.array(
-            [[1 / var_0 + 1 / var_t, -1 / var_t], [-1 / var_t, 1 / var_1 + 1 / var_t]]
+            [[1 / var_0 + 1 / var_t, -1 / var_t], [-1 / var_t, 1 / var_1 + 1 / var_t]],
         )
         v_init = np.linalg.inv(m_init) @ np.array([[d0 / var_0], [d1 / var_1]])
         s_init = np.squeeze(
@@ -403,8 +413,8 @@ class State:
             * np.exp(
                 0.5 * (v_init.T @ m_init @ v_init)
                 - d0**2 / (2 * var_0)
-                - d1**2 / (2 * var_1)
-            )
+                - d1**2 / (2 * var_1),
+            ),
         )
         return cls(np.log(s_init), m_init, v_init, var_t)
 
@@ -419,7 +429,7 @@ class State:
         e0: float,
         v0: float,
     ) -> State:
-        """Initializes the state for the first two frequency channels.
+        """Initialize the state for the first two frequency channels.
 
         Parameters
         ----------
@@ -447,9 +457,11 @@ class State:
             [
                 [1 / var_0 + 1 / var_t + 1 / v0, -1 / var_t],
                 [-1 / var_t, 1 / var_1 + 1 / var_t],
-            ]
+            ],
         )
-        v_init = np.linalg.inv(m_init) @ np.array([[d0 / var_0 + e0 / v0], [d1 / var_1]])
+        v_init = np.linalg.inv(m_init) @ np.array(
+            [[d0 / var_0 + e0 / v0], [d1 / var_1]],
+        )
         s_init = np.squeeze(
             1
             / np.sqrt((2 * np.pi) ** 4 * var_0 * var_1 * var_t * v0)
@@ -457,8 +469,8 @@ class State:
                 0.5 * (v_init.T @ m_init @ v_init)
                 - d0**2 / (2 * var_0)
                 - d1**2 / (2 * var_1)
-                - e0**2 / (2 * v0)
-            )
+                - e0**2 / (2 * v0),
+            ),
         )
         return cls(np.log(s_init), m_init, v_init, var_t)
 
@@ -467,7 +479,11 @@ class State:
 
 
 def kalman_binary_compress(
-    spec: np.ndarray, spec_std: np.ndarray, sig_t: float, e0: float, v0: float
+    spec: np.ndarray,
+    spec_std: np.ndarray,
+    sig_t: float,
+    e0: float,
+    v0: float,
 ) -> State:
     """Kalman binary compression for a spectrum.
 
@@ -489,30 +505,27 @@ def kalman_binary_compress(
     State
         Final state for the whole spectrum.
     """
-    states = []
     var_d = spec_std**2
     var_t = sig_t**2
-    states.append(
-        State.init_from_data_f01(spec[0], spec[1], var_d[0], var_d[1], var_t, e0, v0)
-    )
-    for i in range(2, len(spec), 2):
-        states.append(
-            State.init_from_data(spec[i], spec[i + 1], var_d[i], var_d[i + 1], var_t)
-        )
-
+    states = [
+        State.init_from_data_f01(spec[0], spec[1], var_d[0], var_d[1], var_t, e0, v0),
+    ] + [
+        State.init_from_data(spec[i], spec[i + 1], var_d[i], var_d[i + 1], var_t)
+        for i in range(2, len(spec), 2)
+    ]
     while len(states) > 1:
-        new_states = []
-        for i in range(0, len(states), 2):
-            new_states.append(states[i] + states[i + 1])
-        states = new_states
-
+        states = [states[i] + states[i + 1] for i in range(0, len(states), 2)]
     return states[0]
 
 
 def kalman_binary_hypothesis(
-    spec: np.ndarray, spec_std: np.ndarray, sig_t: float, e0: float, v0: float
+    spec: np.ndarray,
+    spec_std: np.ndarray,
+    sig_t: float,
+    e0: float,
+    v0: float,
 ) -> float:
-    """Calculate the log likelihood ratio of the NP hypothesis test using the binary tree approach.
+    """Calculate the log likelihood ratio of the NP hypothesis test using a binary tree.
 
     Parameters
     ----------
@@ -535,6 +548,6 @@ def kalman_binary_hypothesis(
     state = kalman_binary_compress(spec, spec_std, sig_t, e0, v0)
     log_l_h1 = state.log_s + np.log(np.sqrt((2 * np.pi) ** 2 / np.linalg.det(state.m)))
     log_l_h0 = np.sum(
-        0.5 * np.log(1 / spec_std**2 / 2 / np.pi) - spec**2 / (2 * spec_std**2)
+        0.5 * np.log(1 / spec_std**2 / 2 / np.pi) - spec**2 / (2 * spec_std**2),
     )
     return log_l_h1 - log_l_h0

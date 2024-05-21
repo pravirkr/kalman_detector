@@ -1,3 +1,3 @@
-from importlib import metadata  # noqa: WPS433
+from importlib import metadata
 
-__version__ = metadata.version(__name__)  # noqa: WPS410
+__version__ = metadata.version(__name__)

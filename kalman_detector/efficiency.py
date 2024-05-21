@@ -1,11 +1,18 @@
+from __future__ import annotations
+
+from dataclasses import dataclass
+from typing import TYPE_CHECKING
+
+import numpy as np
+from matplotlib import pyplot as plt
 from scipy import stats
 from uncertainties import unumpy
-from dataclasses import dataclass
-from matplotlib import pyplot as plt
-import numpy as np
 
-from kalman_detector.main import KalmanDetector
 from kalman_detector import utils
+from kalman_detector.main import KalmanDetector
+
+if TYPE_CHECKING:
+    from collections.abc import Callable
 
 
 @dataclass
@@ -19,38 +26,43 @@ class Result:
         return stats.norm.logsf(self.snr_emp)
 
 
-class Results(object):
-    def __init__(self, results):
+class Results:
+    def __init__(self, results: list[Result]) -> None:
         self.results = results
 
     @property
-    def kal_score(self):
+    def kal_score(self) -> np.ndarray:
         return self.get_unumpy("kal_score")
 
     @property
-    def kal_sig(self):
+    def kal_sig(self) -> np.ndarray:
         return self.get_unumpy("kal_sig")
 
     @property
-    def snr_emp(self):
+    def snr_emp(self) -> np.ndarray:
         return self.get_unumpy("snr_emp")
 
     @property
-    def snr_sig(self):
+    def snr_sig(self) -> np.ndarray:
         return self.get_unumpy("snr_sig")
 
     @property
-    def efficiency(self):
+    def efficiency(self) -> np.ndarray:
         return 2 * self.kal_score / self.snr_emp**2
 
-    def get_unumpy(self, key):
+    def get_unumpy(self, key: str) -> unumpy.uarray:
         return unumpy.uarray(self.get_item(key, np.mean), self.get_item(key, np.std))
 
-    def get_item(self, key, func=np.mean):
+    def get_item(self, key: str, func: Callable = np.mean) -> np.ndarray:
         return np.array([func(getattr(result, key)) for result in self.results])
 
 
-def monte_carlo(template, target_snr, q_arr, niters=10000):
+def monte_carlo(
+    template: np.ndarray,
+    target_snr: float,
+    q_arr: np.ndarray,
+    niters: int = 10000,
+) -> list[Result]:
     snr_emp_arr = np.empty(niters)
     kal_sig_arr = np.empty(shape=(niters, len(q_arr)))
     kal_score_arr = np.empty(shape=(niters, len(q_arr)))
@@ -59,12 +71,15 @@ def monte_carlo(template, target_snr, q_arr, niters=10000):
     spec_std = np.ones_like(template)
     kalman = KalmanDetector(spec_std, q_par=q_arr)
     kalman.prepare_fits(ntrials=10000)
+    rng = np.random.default_rng()
     for ii in range(niters):
-        spec = target_snr * template + np.random.normal(
-            spec_mean, spec_std, len(template)
+        spec = target_snr * template + rng.normal(
+            spec_mean,
+            spec_std,
+            len(template),
         )
         snr_emp_arr[ii] = np.dot(template, utils.normalize(spec, spec_std)) / np.sqrt(
-            np.dot(template, template)
+            np.dot(template, template),
         )
         sigs, scores = kalman.get_significance(spec)
         kal_sig_arr[ii] = sigs
@@ -75,7 +90,12 @@ def monte_carlo(template, target_snr, q_arr, niters=10000):
     return results
 
 
-def sim_efficiency(template, snr_arr, q_arr, niters=10000):
+def sim_efficiency(
+    template: np.ndarray,
+    snr_arr: np.ndarray,
+    q_arr: np.ndarray,
+    niters: int = 10000,
+) -> list[Results]:
     results_arr = np.empty((len(q_arr), len(snr_arr)), dtype=object)
     for ii, target_snr in enumerate(snr_arr):
         results = monte_carlo(template, target_snr, q_arr, niters=niters)
@@ -87,14 +107,14 @@ def sim_efficiency(template, snr_arr, q_arr, niters=10000):
 
 
 def eff_plot(
-    template,
-    freqs,
-    ax_eff,
-    ax_prof,
-    niters=10000,
-    snr_arr=None,
-    q_arr=None,
-):
+    template: np.ndarray,
+    freqs: np.ndarray,
+    ax_eff: plt.Axes,
+    ax_prof: plt.Axes,
+    niters: int = 10000,
+    snr_arr: np.ndarray | None = None,
+    q_arr: np.ndarray | None = None,
+) -> list[Results]:
     if snr_arr is None:
         snr_arr = np.arange(6, 40, 2)
     if q_arr is None:

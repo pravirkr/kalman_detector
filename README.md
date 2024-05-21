@@ -39,24 +39,27 @@ python -m kalman_detector.efficiency
 ```
 
 ## Citation
-Please cite [Kumar, Zackay & Law (2023)](https://ui.adsabs.harvard.edu/abs/2023arXiv230607914K) if you find this code useful in your research.
+
+Please cite [Kumar, Zackay & Law (2024)](https://ui.adsabs.harvard.edu/abs/2024ApJ...960..128K) if you find this code useful in your research.
 The BibTeX entry for the paper is:
 
 ```bash
-@article{Kumar:2023,
+@ARTICLE{2024ApJ...960..128K,
        author = {{Kumar}, Pravir and {Zackay}, Barak and {Law}, Casey J.},
-        title = "{Detecting Fast Radio Bursts with Spectral Structure using the Continuous Forward Algorithm}",
-      journal = {arXiv e-prints},
-     keywords = {Astrophysics - High Energy Astrophysical Phenomena, Astrophysics - Instrumentation and Methods for Astrophysics},
-         year = 2023,
-        month = jun,
-          eid = {arXiv:2306.07914},
-        pages = {arXiv:2306.07914},
-          doi = {10.48550/arXiv.2306.07914},
+        title = "{Detecting Fast Radio Bursts with Spectral Structure Using the Continuous Forward Algorithm}",
+      journal = {\apj},
+     keywords = {Radio astronomy, Radio transient sources, Astronomy data analysis, Astrostatistics techniques, Interstellar scintillation, 1338, 2008, 1858, 1886, 855, Astrophysics - High Energy Astrophysical Phenomena, Astrophysics - Instrumentation and Methods for Astrophysics},
+         year = 2024,
+        month = jan,
+       volume = {960},
+       number = {2},
+          eid = {128},
+        pages = {128},
+          doi = {10.3847/1538-4357/ad0964},
 archivePrefix = {arXiv},
        eprint = {2306.07914},
  primaryClass = {astro-ph.HE},
-       adsurl = {https://ui.adsabs.harvard.edu/abs/2023arXiv230607914K},
+       adsurl = {https://ui.adsabs.harvard.edu/abs/2024ApJ...960..128K},
       adsnote = {Provided by the SAO/NASA Astrophysics Data System}
 }
 ```
