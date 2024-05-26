@@ -1,12 +1,95 @@
 [build-system]
-requires = [
-    "setuptools>=47",
-    "wheel",
-]
-
+requires = ["setuptools", "wheel"]
 build-backend = "setuptools.build_meta"
 
+[project]
+name = "kalman_detector"
+version = "0.5.0"
+description = "Detecting Fast Radio Bursts with Spectral Structures"
+readme = "README.md"
+authors = [
+    { name = "Pravir Kumar", email = "pravirka@gmail.com" },
+    { name = "Barak Zackay", email = "bzackay@gmail.com" },
+]
+requires-python = ">=3.9"
+classifiers = [
+    "Programming Language :: Python :: 3 :: Only",
+    "Programming Language :: Python :: 3.9",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Operating System :: MacOS :: MacOS X",
+    "Operating System :: Microsoft :: Windows",
+    "Operating System :: POSIX :: Linux",
+    "License :: OSI Approved :: MIT License",
+    "Development Status :: 5 - Production/Stable",
+    "Intended Audience :: Science/Research",
+    "Topic :: Scientific/Engineering :: Astronomy",
+]
+dependencies = [
+    "numpy",
+    "numba",
+    "scipy",
+    "matplotlib",
+    "rich",
+    "sympy",
+    "uncertainties",
+    "typing_extensions",
+]
 
-[tool.black]
-line-length = 90
-target_version = ['py38', 'py39', 'py310', 'py311']
+[project.urls]
+Repository = "https://github.com/pravirkr/kalman_detector"
+
+[project.optional-dependencies]
+tests = ["pytest", "pytest-cov", "pytest-randomly", "pytest-sugar", "mypy"]
+docs = ["sphinx", "sphinx-book-theme", "sphinx-click", "myst-nb"]
+develop = ["ruff"]
+
+[tool.ruff]
+include = ["pyproject.toml", "kalman_detector/**/*.py"]
+line-length = 88
+indent-width = 4
+target-version = "py39"
+
+[tool.ruff.format]
+quote-style = "double"
+indent-style = "space"
+
+[tool.ruff.lint]
+select = ["ALL"]
+ignore = ["D1", "ANN1", "PLR2004", "G004"]
+
+[tool.ruff.lint.pylint]
+max-args = 10
+
+[tool.ruff.lint.pydocstyle]
+convention = "numpy"
+
+[tool.ruff.lint.per-file-ignores]
+"kalman_detector/svm.py" = ["N806"]
+"tests/*.py" = ["S101", "FBT", "PLR2004", "PT011", "SLF001", "N806"]
+
+[tool.pytest.ini_options]
+minversion = "8.0"
+testpaths = "tests"
+
+[tool.coverage.paths]
+source = ["./kalman_detector/"]
+
+[tool.coverage.run]
+omit = ["tests/*", "docs/*", "*__init__.py", "kalman_detector/efficiency.py"]
+
+[tool.coverage.report]
+show_missing = true
+#fail_under = 85
+ignore_errors = true
+exclude_lines = [
+    'raise NotImplementedError',
+    'if TYPE_CHECKING:',
+    'if __name__ == "__main__":',
+    'if outfile_name is None:',
+]
+
+[tool.mypy]
+ignore_missing_imports = true
+plugins = ["numpy.typing.mypy_plugin"]

@@ -1,10 +1,14 @@
 from __future__ import annotations
+
 import numpy as np
 from scipy import stats
 
 
 def add_noise(
-    spec: np.ndarray, spec_std: np.ndarray, current_snr: float, target_snr: float
+    spec: np.ndarray,
+    spec_std: np.ndarray,
+    current_snr: float,
+    target_snr: float,
 ) -> tuple[np.ndarray, np.ndarray]:
     """Add noise to spectrum to achieve target_snr.
 
@@ -26,15 +30,18 @@ def add_noise(
     """
     current_variance = np.mean(spec_std**2)
     needed_std = np.sqrt(
-        current_variance * (current_snr**2 - target_snr**2) / target_snr**2
+        current_variance * (current_snr**2 - target_snr**2) / target_snr**2,
     )
-    spec_noise = spec + np.random.normal(0, needed_std, len(spec))
+    rng = np.random.default_rng()
+    spec_noise = spec + rng.normal(0, needed_std, len(spec))
     spec_std_noise = (spec_std**2 + needed_std**2) ** 0.5
     return spec_noise, spec_std_noise
 
 
 def normalize_spectrum(
-    spec: np.ndarray, spec_std: np.ndarray, chan_mask: np.ndarray | None = None
+    spec: np.ndarray,
+    spec_std: np.ndarray,
+    chan_mask: np.ndarray | None = None,
 ) -> np.ndarray:
     """Normalize spectrum to zero mean. Likelihood calc expects zero mean spec.
 
@@ -59,7 +66,9 @@ def normalize_spectrum(
 
 
 def normalize(
-    spec: np.ndarray, spec_std: np.ndarray, spec_mean: np.ndarray | None = None
+    spec: np.ndarray,
+    spec_std: np.ndarray,
+    spec_mean: np.ndarray | None = None,
 ) -> np.ndarray:
     """Normalize spectrum to zero mean and unit std.
 
@@ -102,9 +111,10 @@ def get_snr_from_logsf(logsf: float) -> float:
 
     Notes
     -----
-    isf function returns bad results if we try to feed it with np.exp(-600) and beyond. This
-    is because the double epsilon is reached. Needless to say, at this point the exact significance
-    does not mean anything. In this case, we return a good approximation for S/N.
+    isf function returns bad results if we try to feed it with np.exp(-600) and beyond.
+    This is because the double epsilon is reached. Needless to say, at this point the
+    exact significance does not mean anything. In this case, we return a good
+    approximation for S/N.
     """
     if np.abs(logsf) > 600:
         return np.abs(2 * logsf - np.log(np.abs(2 * logsf))) ** 0.5
@@ -112,7 +122,10 @@ def get_snr_from_logsf(logsf: float) -> float:
 
 
 def simulate_gaussian_signal(
-    nchans: int, corr_len: float, complex_process: bool = False
+    nchans: int,
+    corr_len: float,
+    *,
+    complex_process: bool = False,
 ) -> np.ndarray:
     """Simulate 1d Gaussian process.
 
@@ -131,11 +144,13 @@ def simulate_gaussian_signal(
         Normalized mean-subtracted signal array.
     """
     rng = np.random.default_rng()
-    kernel = np.exp(-np.linspace(-nchans / corr_len, nchans / corr_len, nchans) ** 2)
+    kernel = np.exp(-(np.linspace(-nchans / corr_len, nchans / corr_len, nchans) ** 2))
     kernel /= np.dot(kernel, kernel) ** 0.5
     if complex_process:
         base_process = rng.normal(0, 1 / np.sqrt(corr_len), nchans) + 1.0j * rng.normal(
-            0, 1 / np.sqrt(corr_len), nchans
+            0,
+            1 / np.sqrt(corr_len),
+            nchans,
         )
     else:
         base_process = rng.normal(0, 1 / np.sqrt(corr_len), nchans)
@@ -144,7 +159,7 @@ def simulate_gaussian_signal(
     return signal / np.dot(signal, signal) ** 0.5
 
 
-class SnrResult(object):
+class SnrResult:
     def __init__(self, name: str, snr_box: float, sig_kalman: float) -> None:
         self.name = name
         self.snr_box = snr_box
@@ -158,7 +173,7 @@ class SnrResult(object):
     def snr_kalman(self) -> float:
         return get_snr_from_logsf(self.sig_box + self.sig_kalman)
 
-    def to_dict(self) -> dict[str, float]:
+    def to_dict(self) -> dict[str, str | float]:
         return {
             "name": self.name,
             "sig_box": self.sig_box,
@@ -169,6 +184,8 @@ class SnrResult(object):
 
     def __str__(self) -> str:
         return (
-            f"{self.name} - Box S/N: {self.snr_box:.1f}, Kalman S/N: {self.snr_kalman:.1f}\n"
-            f"            Box Sig: {-self.sig_box:.1f}, Kalman Sig: {-self.sig_kalman:.1f}"
+            f"{self.name} - Box S/N: {self.snr_box:.1f}, "
+            f"Kalman S/N: {self.snr_kalman:.1f}\n"
+            f"            Box Sig: {-self.sig_box:.1f}, "
+            f"Kalman Sig: {-self.sig_kalman:.1f}"
         )
