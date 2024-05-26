@@ -34,7 +34,7 @@ kalman.get_significance(spectrum)
 
 ### Example
 
-An example script demonstrating how to use the Kalman detector can be found in the `examples` directory.
+An example script demonstrating how to use the Kalman detector can be found in the [examples](examples/frb_kalman.py) directory.
 
 |           |           |
 | --------- | --------- |

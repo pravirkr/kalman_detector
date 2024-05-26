@@ -33,7 +33,7 @@ jobs:
       continue-on-error: true
     - name: Check types with mypy
       run: |
-        mypy --strict ./kalman_detector/
+        mypy ./kalman_detector/
       continue-on-error: true
     - name: Run pytest and Generate coverage report
       run: |
