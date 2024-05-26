@@ -5,6 +5,7 @@ from typing import TYPE_CHECKING
 
 import numpy as np
 from matplotlib import pyplot as plt
+from rich.progress import track
 from scipy import stats
 from uncertainties import unumpy
 
@@ -97,7 +98,8 @@ def sim_efficiency(
     niters: int = 10000,
 ) -> list[Results]:
     results_arr = np.empty((len(q_arr), len(snr_arr)), dtype=object)
-    for ii, target_snr in enumerate(snr_arr):
+    for ii in track(range(len(snr_arr)), description="Simulating efficiency"):
+        target_snr = snr_arr[ii]
         results = monte_carlo(template, target_snr, q_arr, niters=niters)
         results_arr[:, ii] = results
     results_ts = []
@@ -157,6 +159,7 @@ if __name__ == "__main__":
     freqs = np.arange(nchans) + 1104
     template = utils.simulate_gaussian_signal(nchans, corr_len, complex_process=True)
 
-    fig, (ax_eff, ax_prof) = plt.subplots(2, 1, height_ratios=(2, 1), figsize=(5, 5.5))
+    fig, (ax_eff, ax_prof) = plt.subplots(2, 1, height_ratios=(2, 1), figsize=(6, 6.5))
     results = eff_plot(template, freqs, ax_eff, ax_prof, niters=niters)
+    fig.tight_layout()
     plt.show()

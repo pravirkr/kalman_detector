@@ -5,13 +5,13 @@
 [![License](https://img.shields.io/github/license/pravirkr/kalman_detector)](https://github.com/pravirkr/kalman_detector/blob/main/LICENSE)
 [![Code style: black](https://img.shields.io/badge/code%20style-black-000000.svg)](https://github.com/psf/black)
 
-Python Implementation of the Kalman filter detector for detecting smoothly variying signals buried in gaussian noise (like Fast Radio Bursts).
+A Python Implementation of a Kalman filter detector for detecting smoothly variying signals hidden in gaussian noise, such as Fast Radio Bursts (FRBs).
 
-The detection statistic is designed to receive I(f), a sequence of observed "amplitudes" (where f is an arbitrary indexed parameter) and decide between:
+The detection statistic is designed to process `I(f)`, a sequence of observed "amplitudes" (where `f` is an arbitrary indexed parameter), and decide between the following hypotheses:
 
-```
+```markdown
 H0: I(f) = N(f)         Pure gaussian noise
-H1: I(f) = A(f) + N(f)  A(f) is a smooth gaussian process with the smoothness parameter unknown. 
+H1: I(f) = A(f) + N(f)  A(f) is a smooth gaussian process with an unknown smoothness parameter. 
 ```
 
 ## Installation
@@ -19,7 +19,7 @@ H1: I(f) = A(f) + N(f)  A(f) is a smooth gaussian process with the smoothness pa
 The quickest way to install the package is to use [pip](https://pip.pypa.io):
 
 ```bash
-pip install -U git+https://github.com/pravirkr/kalman_detector
+pip install -U kalman_detector
 ```
 
 ## Usage
@@ -32,7 +32,17 @@ kalman.prepare_fits(ntrials=10000)
 kalman.get_significance(spectrum)
 ```
 
+### Example
+
+An example script demonstrating how to use the Kalman detector can be found in the `examples` directory.
+
+|           |           |
+| --------- | --------- |
+| ![Kalman demo for FRB171003](examples/frb171003_kalman.png) | ![Kalman demo for FRB171004](examples/frb171004_kalman.png) |
+
 ### Efficiency
+
+An example efficiency plot can be generates using:
 
 ```python
 python -m kalman_detector.efficiency
