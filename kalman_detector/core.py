@@ -3,6 +3,8 @@ from __future__ import annotations
 import numpy as np
 from numba import jit
 
+from kalman_detector.svm import kalman_binary_compress
+
 
 @jit(nopython=True)
 def kalman_filter(
@@ -18,23 +20,23 @@ def kalman_filter(
     Parameters
     ----------
     spec : np.ndarray
-        1d spectra
+        1D array of spectrum values.
     spec_std : np.ndarray
-        1d spectra noise std
+        1D array of spectrum (noise) standard deviations.
     sig_eta : float
         State transition std or Process noise. Sets the smoothness scale of
         model change.
     e0 : float
-        initial guess of model expectation value in first channel, by default 0
+        Initial guess of model expectation value in first channel, by default 0
     v0 : float, optional
-        initial guess of model std in first channel, by default None
+        Initial guess of model std in first channel, by default None
     chan_mask : np.ndarray, optional
         mask of channels to ignore, by default None
 
     Returns
     -------
     float
-        score, which is the likelihood of presence of signal.
+        score, which is the Log likelihood ratio of the NP hypothesis test.
 
     Notes
     -----
@@ -70,4 +72,42 @@ def kalman_filter(
                 spec[ichan] * spec[ichan] / (spec_std[ichan] * spec_std[ichan]) / 2
             ) - 0.5 * np.log(2 * np.pi * spec_std[ichan] * spec_std[ichan])
 
+    return log_l_h1 - log_l_h0
+
+
+def kalman_filter_binary(
+    spec: np.ndarray,
+    spec_std: np.ndarray,
+    sig_eta: float,
+    e0: float = 0,
+    v0: float | None = None,
+) -> float:
+    """Kalman score estimator for input 1d spectrum data in binary search tree.
+
+    Parameters
+    ----------
+    spec : np.ndarray
+        1D array of spectrum values.
+    spec_std : np.ndarray
+        1D array of spectrum (noise) standard deviations.
+    sig_eta : float
+        State transition std or Process noise.
+    e0 : float
+        Initial guess of the expected value of the first hidden state A0, by default 0.
+    v0 : float, optional
+        Initial guess of the variance of the first hidden state A0, by default None.
+
+    Returns
+    -------
+    float
+        score, Log likelihood ratio of the NP hypothesis test.
+    """
+    if v0 is None:
+        v0 = np.median(spec_std) ** 2
+
+    state = kalman_binary_compress(spec, spec_std, sig_eta, e0, v0)
+    log_l_h1 = state.log_s + np.log(np.sqrt((2 * np.pi) ** 2 / np.linalg.det(state.m)))
+    log_l_h0 = np.sum(
+        0.5 * np.log(1 / spec_std**2 / 2 / np.pi) - spec**2 / (2 * spec_std**2),
+    )
     return log_l_h1 - log_l_h0

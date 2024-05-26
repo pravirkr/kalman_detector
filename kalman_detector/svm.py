@@ -483,8 +483,8 @@ def kalman_binary_compress(
     spec: np.ndarray,
     spec_std: np.ndarray,
     sig_t: float,
-    e0: float = 0,
-    v0: float | None = None,
+    e0: float,
+    v0: float,
 ) -> State:
     """Kalman binary compression for a spectrum.
 
@@ -497,18 +497,15 @@ def kalman_binary_compress(
     sig_t : float
         Standard deviation of the tranition between states.
     e0 : float
-        Initial guess of the expected value of the first hidden state A0, by default 0.
-    v0 : float, optional
-        Initial guess of the variance of the first hidden state A0, by default None.
+        Initial guess of the expected value of the first hidden state A0.
+    v0 : float
+        Initial guess of the variance of the first hidden state A0.
 
     Returns
     -------
     State
         Final state for the whole spectrum.
     """
-    if v0 is None:
-        v0 = np.median(spec_std) ** 2
-
     var_d = spec_std**2
     var_t = sig_t**2
     states = [
@@ -520,38 +517,3 @@ def kalman_binary_compress(
     while len(states) > 1:
         states = [states[i] + states[i + 1] for i in range(0, len(states), 2)]
     return states[0]
-
-
-def kalman_binary_hypothesis(
-    spec: np.ndarray,
-    spec_std: np.ndarray,
-    sig_t: float,
-    e0: float,
-    v0: float,
-) -> float:
-    """Calculate the log likelihood ratio of the NP hypothesis test using a binary tree.
-
-    Parameters
-    ----------
-    spec : np.ndarray
-        1D array of spectrum values.
-    spec_std : np.ndarray
-        1D array of spectrum standard deviations.
-    sig_t : float
-        Standard deviation of the tranition between states.
-    e0 : float
-        Expected value of the first hidden state A0.
-    v0 : float
-        Variance of the first hidden state A0.
-
-    Returns
-    -------
-    float
-        Log likelihood ratio of the NP hypothesis test.
-    """
-    state = kalman_binary_compress(spec, spec_std, sig_t, e0, v0)
-    log_l_h1 = state.log_s + np.log(np.sqrt((2 * np.pi) ** 2 / np.linalg.det(state.m)))
-    log_l_h0 = np.sum(
-        0.5 * np.log(1 / spec_std**2 / 2 / np.pi) - spec**2 / (2 * spec_std**2),
-    )
-    return log_l_h1 - log_l_h0
