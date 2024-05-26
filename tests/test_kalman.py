@@ -5,11 +5,26 @@ import pytest
 from numpy.polynomial import Polynomial
 
 from kalman_detector import utils
+from kalman_detector.core import kalman_filter
 from kalman_detector.main import (
     KalmanDetector,
     KalmanDistribution,
     secondary_spectrum_cumulative_chi2_score,
 )
+
+
+class TestKalmanFilter:
+    def test_kalman_filter(self) -> None:
+        nchans = 128
+        target = 5
+        rng = np.random.default_rng()
+        spec_std = rng.normal(1, 0.1, size=nchans)
+        spec = rng.normal(target, spec_std)
+        score = kalman_filter(spec, spec_std, 0.1)
+        mask = np.zeros(nchans, dtype=bool)
+        mask[rng.choice(nchans, 2, replace=False)] = True
+        score_masked = kalman_filter(spec, spec_std, 0.1, chan_mask=mask)
+        np.testing.assert_allclose(score, score_masked, rtol=1e-1)
 
 
 class TestKalmanDetector:
@@ -129,6 +144,7 @@ class TestKalmanDistribution:
         sigma_arr = np.arange(0.1, 1, 0.01)
         kdist = KalmanDistribution(sigma_arr, 0.01, ntrials=1000)
         assert str(kdist).startswith("KalmanDistribution")
+        assert repr(kdist) == str(kdist)
 
 
 class TestSecondarySpectrym:

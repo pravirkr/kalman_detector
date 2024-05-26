@@ -8,6 +8,7 @@ import sympy as sp
 
 logger = logging.getLogger(__name__)
 
+
 def collect2(expr: sp.Expr, v1: sp.Symbol, p1: int, v2: sp.Symbol, p2: int) -> sp.Expr:
     """Collect the coefficient of v1**p1 and v2**p2 in expr.
 
@@ -482,8 +483,8 @@ def kalman_binary_compress(
     spec: np.ndarray,
     spec_std: np.ndarray,
     sig_t: float,
-    e0: float,
-    v0: float,
+    e0: float = 0,
+    v0: float | None = None,
 ) -> State:
     """Kalman binary compression for a spectrum.
 
@@ -496,15 +497,18 @@ def kalman_binary_compress(
     sig_t : float
         Standard deviation of the tranition between states.
     e0 : float
-        Expected value of the first hidden state A0.
-    v0 : float
-        Variance of the first hidden state A0.
+        Initial guess of the expected value of the first hidden state A0, by default 0.
+    v0 : float, optional
+        Initial guess of the variance of the first hidden state A0, by default None.
 
     Returns
     -------
     State
         Final state for the whole spectrum.
     """
+    if v0 is None:
+        v0 = np.median(spec_std) ** 2
+
     var_d = spec_std**2
     var_t = sig_t**2
     states = [

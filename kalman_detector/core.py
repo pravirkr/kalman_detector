@@ -40,7 +40,7 @@ def kalman_filter(
     -----
     Number of changes is sqrt(nchan)*sig_eta/mean(spec_std).
     Frequency scale is 1/sig_eta**2.
-    For details, see Eq. 10--12 in Kumar, Zackay & Law (2023).
+    For details, see Eq. 10--12 in Kumar, Zackay & Law (2024).
     """
     if v0 is None:
         v0 = np.median(spec_std) ** 2

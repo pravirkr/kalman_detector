@@ -18,6 +18,8 @@ class TestKalmanDetector2D:
         kalman1d = kalman_filter(spec, spec_std, sig_t, e0=e0, v0=v0)
         kalman2d = kalman_binary_hypothesis(spec, spec_std, sig_t, e0=e0, v0=v0)
         np.testing.assert_almost_equal(kalman1d, kalman2d, decimal=10)
+        kalman1d_py = kalman_filter.py_func(spec, spec_std, sig_t, e0=e0, v0=v0)
+        np.testing.assert_almost_equal(kalman1d, kalman1d_py, decimal=10)
 
     @pytest.mark.parametrize("e0", [-10, -1, -0.1, -0.01, 0, 0.01, 0.1, 1, 10])
     @pytest.mark.parametrize("nchans", [2, 128, 4096])
@@ -31,6 +33,9 @@ class TestKalmanDetector2D:
         kalman1d = kalman_filter(spec, spec_std, sig_t, e0=e0, v0=v0)
         kalman2d = kalman_binary_hypothesis(spec, spec_std, sig_t, e0=e0, v0=v0)
         np.testing.assert_almost_equal(kalman2d, kalman1d, decimal=10)
+        # Test without v0
+        kalman1d_py = kalman_filter.py_func(spec, spec_std, sig_t, e0=e0)
+        np.testing.assert_almost_equal(kalman1d, kalman1d_py, decimal=10)
 
     @pytest.mark.parametrize("sig_t", [0.01, 0.1, 1, 10, 100, 1000])
     @pytest.mark.parametrize("nchans", [2, 128, 1024])
@@ -44,6 +49,8 @@ class TestKalmanDetector2D:
         kalman1d = kalman_filter(spec, spec_std, sig_t, e0=e0, v0=v0)
         kalman2d = kalman_binary_hypothesis(spec, spec_std, sig_t, e0=e0, v0=v0)
         np.testing.assert_almost_equal(kalman2d, kalman1d, decimal=10)
+        kalman1d_py = kalman_filter.py_func(spec, spec_std, sig_t, e0=e0, v0=v0)
+        np.testing.assert_almost_equal(kalman1d, kalman1d_py, decimal=10)
 
     @pytest.mark.parametrize("nchans", [2, 4, 16, 64, 256, 1024, 4096, 8192])
     def test_consistency_nchans(self, nchans: int) -> None:
@@ -57,3 +64,5 @@ class TestKalmanDetector2D:
         kalman1d = kalman_filter(spec, spec_std, sig_t, e0=e0, v0=v0)
         kalman2d = kalman_binary_hypothesis(spec, spec_std, sig_t, e0=e0, v0=v0)
         np.testing.assert_almost_equal(kalman2d, kalman1d, decimal=10)
+        kalman1d_py = kalman_filter.py_func(spec, spec_std, sig_t, e0=e0, v0=v0)
+        np.testing.assert_almost_equal(kalman1d, kalman1d_py, decimal=10)
