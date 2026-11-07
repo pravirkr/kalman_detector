@@ -190,10 +190,11 @@ venv.bak/
 # mkdocs documentation
 /site
 
-# mypy
+# type checkers
 .mypy_cache/
 .dmypy.json
 dmypy.json
+.tycache/
 
 # Pyre type checker
 .pyre/
@@ -217,8 +218,6 @@ poetry.toml
 
 # ruff
 .ruff_cache/
-
-.benchmarks/
 
 # LSP config files
 pyrightconfig.json
@@ -268,4 +267,9 @@ $RECYCLE.BIN/
 # Windows shortcuts
 *.lnk
 
-# End of https://www.toptal.com/developers/gitignore/api/macos,windows,linux,python,visualstudiocode
+# End of https://www.toptal.com/developers/gitignore/api/python,macos,windows,linux,visualstudiocode
+
+### kalman_detector ###
+.benchmarks/
+reports/
+tmp_files/
