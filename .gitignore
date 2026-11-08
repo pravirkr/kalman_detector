@@ -276,4 +276,5 @@ $RECYCLE.BIN/
 ### kalman_detector ###
 .benchmarks/
 reports/
+paper/
 tmp_files/

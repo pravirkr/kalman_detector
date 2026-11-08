@@ -106,7 +106,14 @@ class TestSnrResult:
         sig_kalman = 0
         result = utils.SnrResult(name, snr_box, sig_kalman)
         np.testing.assert_almost_equal(result.sig_box, stats.norm.logsf(snr_box))
-        np.testing.assert_almost_equal(result.snr_kalman, snr_box)
+        np.testing.assert_almost_equal(result.snr_kalman_legacy, snr_box)
+        # Fisher's combination penalises an uninformative second p-value.
+        log_px = result.sig_box
+        np.testing.assert_almost_equal(
+            result.sig_combined,
+            log_px + np.log(1 - log_px),
+        )
+        assert result.snr_kalman < snr_box
 
     def test_to_dict(self) -> None:
         name = "test"
@@ -123,3 +130,68 @@ class TestSnrResult:
         sig_kalman = 10
         result = utils.SnrResult(name, snr_box, sig_kalman)
         assert str(result).startswith("test")
+
+    def test_n_eff(self) -> None:
+        result = utils.SnrResult("test", 6, -20, n_eff=4)
+        np.testing.assert_allclose(
+            result.sig_kalman_corrected,
+            np.log(1 - (1 - np.exp(-20)) ** 4),
+            rtol=1e-6,
+        )
+        assert result.sig_combined > result.sig_box + result.sig_kalman
+        assert result.snr_kalman < result.snr_kalman_legacy
+        result_dict = result.to_dict()
+        for key in ("n_eff", "sig_combined", "snr_kalman_legacy"):
+            assert key in result_dict
+
+
+class TestCalibration:
+    def test_fisher_logsf_uniform(self) -> None:
+        rng = np.random.default_rng(0)
+        ntrials = 200000
+        log_pa = np.log(rng.uniform(size=ntrials))
+        log_pb = np.log(rng.uniform(size=ntrials))
+        combined = np.array(
+            [utils.fisher_logsf(a, b) for a, b in zip(log_pa, log_pb, strict=True)],
+        )
+        for alpha in (0.1, 0.01, 1e-3):
+            rate = np.mean(combined < np.log(alpha))
+            np.testing.assert_allclose(rate, alpha, rtol=4 / np.sqrt(alpha * ntrials))
+        # The uncalibrated product is anti-conservative (REPORT 4.1).
+        assert np.mean(log_pa + log_pb < np.log(1e-3)) > 5e-3
+
+    def test_fisher_logsf_values(self) -> None:
+        np.testing.assert_allclose(utils.fisher_logsf(0, 0), 0)
+        log_px = -50.0
+        np.testing.assert_allclose(
+            utils.fisher_logsf(-20.0, -30.0),
+            log_px + np.log(1 - log_px),
+        )
+
+    @pytest.mark.parametrize("n_trials", [1, 2.5, 8])
+    def test_sidak_logsf(self, n_trials: float) -> None:
+        for logp in (-1e-3, -0.5, -3.0, -50.0, -800.0):
+            if logp < -30:
+                expected = np.log(n_trials) + logp
+            else:
+                expected = np.log1p(-((1 - np.exp(logp)) ** n_trials))
+            np.testing.assert_allclose(
+                utils.sidak_logsf(logp, n_trials),
+                expected,
+                rtol=1e-6,
+            )
+        np.testing.assert_equal(utils.sidak_logsf(0.0, n_trials), 0.0)
+
+    def test_sidak_logsf_uniform(self) -> None:
+        rng = np.random.default_rng(1)
+        n_trials = 5
+        min_p = rng.uniform(size=(200000, n_trials)).min(axis=1)
+        corrected = np.array([utils.sidak_logsf(np.log(p), n_trials) for p in min_p])
+        np.testing.assert_allclose(np.mean(corrected < np.log(0.01)), 0.01, rtol=0.1)
+
+    def test_effective_number_of_tests(self) -> None:
+        np.testing.assert_allclose(utils.effective_number_of_tests(np.eye(5)), 5)
+        np.testing.assert_allclose(utils.effective_number_of_tests(np.ones((5, 5))), 1)
+        corr = np.full((4, 4), 0.5) + 0.5 * np.eye(4)
+        n_eff = utils.effective_number_of_tests(corr)
+        assert 1 <= n_eff <= 4

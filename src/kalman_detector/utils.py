@@ -159,18 +159,143 @@ def simulate_gaussian_signal(
     return signal / np.dot(signal, signal) ** 0.5
 
 
+def effective_number_of_tests(corr: np.ndarray) -> float:
+    """Effective number of independent tests from a correlation matrix.
+
+    Uses the Li & Ji (2005, Heredity 95, 221) eigenvalue estimator,
+    ``N_eff = sum_i [I(|e_i| >= 1) + (|e_i| - floor(|e_i|))]``, where ``e_i``
+    are the eigenvalues of the correlation matrix.
+
+    Parameters
+    ----------
+    corr : np.ndarray
+        Square correlation matrix of the test statistics.
+
+    Returns
+    -------
+    float
+        Effective number of tests, between 1 and ``len(corr)``.
+    """
+    corr = np.atleast_2d(np.asarray(corr, dtype=np.float64))
+    eigs = np.abs(np.linalg.eigvalsh(corr))
+    # Snap round-off (e.g. 4.9999999999) so floor() is not off by one.
+    nearest = np.round(eigs)
+    eigs = np.where(np.abs(eigs - nearest) < 1e-9, nearest, eigs)
+    n_eff = np.sum((eigs >= 1).astype(float) + (eigs - np.floor(eigs)))
+    return float(np.clip(n_eff, 1, len(corr)))
+
+
+def sidak_logsf(logsf: float, n_trials: float) -> float:
+    """Trials-corrected log p-value of the minimum of ``n_trials`` tests.
+
+    Computes ``log(1 - (1 - p)**n_trials)`` stably for ``p = exp(logsf)``.
+
+    Parameters
+    ----------
+    logsf : float
+        log p-value of the best (minimum p-value) test.
+    n_trials : float
+        (Effective) number of independent trials.
+
+    Returns
+    -------
+    float
+        Corrected log p-value (<= 0).
+    """
+    if logsf >= 0:
+        return 0.0
+    if logsf < -30:
+        # 1 - (1 - p)^n = n p (1 + O(n p)), with n p < 1e-12 relative error.
+        return float(min(0.0, np.log(n_trials) + logsf))
+    return float(min(0.0, _log1mexp(n_trials * _log1mexp(logsf))))
+
+
+def _log1mexp(x: float) -> float:
+    """Compute ``log(1 - exp(x))`` accurately for ``x < 0`` (Maechler 2012)."""
+    if x > -np.log(2):
+        return float(np.log(-np.expm1(x)))
+    return float(np.log1p(-np.exp(x)))
+
+
+def fisher_logsf(logsf_a: float, logsf_b: float) -> float:
+    """Calibrated log p-value of the product of two independent p-values.
+
+    For independent uniform p-values, ``P(p_a p_b <= p_x) = p_x (1 - log p_x)``
+    (Fisher's method with 4 degrees of freedom).
+
+    Parameters
+    ----------
+    logsf_a, logsf_b : float
+        log p-values of the two independent tests.
+
+    Returns
+    -------
+    float
+        Combined log p-value (<= 0).
+    """
+    log_px = logsf_a + logsf_b
+    return float(min(0.0, log_px + np.log1p(-log_px)))
+
+
 class SnrResult:
-    def __init__(self, name: str, snr_box: float, sig_kalman: float) -> None:
+    """Combined box-car and Kalman detection significance.
+
+    Parameters
+    ----------
+    name : str
+        Name of the candidate.
+    snr_box : float
+        Box-car (broadband) S/N.
+    sig_kalman : float
+        Best Kalman significance (log p-value) over the transit sigmas.
+    n_eff : float, optional
+        Effective number of trials over the transit sigmas used to correct
+        ``sig_kalman`` (see :attr:`KalmanDetector.n_eff`), by default 1
+        (no correction).
+
+    Notes
+    -----
+    The calibrated combination corrects the best Kalman p-value for the
+    selection over transit sigmas (Sidak with ``n_eff``) and combines it with
+    the box-car p-value with Fisher's method, ``p_x (1 - log p_x)``. The legacy
+    uncalibrated product ``p_box * p_kalman`` is kept as
+    :attr:`snr_kalman_legacy`.
+    """
+
+    def __init__(
+        self,
+        name: str,
+        snr_box: float,
+        sig_kalman: float,
+        n_eff: float = 1.0,
+    ) -> None:
         self.name = name
         self.snr_box = snr_box
         self.sig_kalman = sig_kalman
+        self.n_eff = n_eff
 
     @property
     def sig_box(self) -> float:
         return stats.norm.logsf(self.snr_box)
 
     @property
+    def sig_kalman_corrected(self) -> float:
+        """Kalman log p-value corrected for the selection over transit sigmas."""
+        return sidak_logsf(self.sig_kalman, self.n_eff)
+
+    @property
+    def sig_combined(self) -> float:
+        """Calibrated Fisher combination of box-car and Kalman log p-values."""
+        return fisher_logsf(self.sig_box, self.sig_kalman_corrected)
+
+    @property
     def snr_kalman(self) -> float:
+        """Gaussian-equivalent S/N of the calibrated combined significance."""
+        return get_snr_from_logsf(self.sig_combined)
+
+    @property
+    def snr_kalman_legacy(self) -> float:
+        """Legacy (uncalibrated) S/N from the plain product of p-values."""
         return get_snr_from_logsf(self.sig_box + self.sig_kalman)
 
     def to_dict(self) -> dict[str, str | float]:
@@ -178,14 +303,20 @@ class SnrResult:
             "name": self.name,
             "sig_box": self.sig_box,
             "sig_kalman": self.sig_kalman,
+            "n_eff": self.n_eff,
+            "sig_kalman_corrected": self.sig_kalman_corrected,
+            "sig_combined": self.sig_combined,
             "snr_box": self.snr_box,
             "snr_kalman": self.snr_kalman,
+            "snr_kalman_legacy": self.snr_kalman_legacy,
         }
 
     def __str__(self) -> str:
         return (
             f"{self.name} - Box S/N: {self.snr_box:.1f}, "
-            f"Kalman S/N: {self.snr_kalman:.1f}\n"
+            f"Kalman S/N: {self.snr_kalman:.1f} "
+            f"(legacy: {self.snr_kalman_legacy:.1f})\n"
             f"            Box Sig: {-self.sig_box:.1f}, "
-            f"Kalman Sig: {-self.sig_kalman:.1f}"
+            f"Kalman Sig: {-self.sig_kalman:.1f}, "
+            f"Combined Sig: {-self.sig_combined:.1f} (n_eff={self.n_eff:.2f})"
         )

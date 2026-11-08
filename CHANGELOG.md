@@ -9,6 +9,13 @@
 - Run tests with uv on Python 3.12, 3.13, and 3.14, and publish releases with `uv build`.
 - Compute Monte Carlo efficiency with NumPy and drop the `uncertainties` dependency.
 - Document the Python 3.12 install and the uv development setup.
+- Add the diffuse initial prior (`diffuse=True` or `v0=np.inf`) to `kalman_filter`, scoring the mean-free contrast likelihood ratio, which is invariant to constant offsets.
+- Add `prepare_gain_cache` and `kalman_filter_cached`, which precompute the Kalman gains once per noise profile and score single spectra or batches.
+- Calibrate `KalmanDetector` analytically by default (`prepare_fits(method="saddlepoint")`), using tridiagonal eigenvalues and a saddlepoint tail instead of Monte Carlo. `KalmanDetector` now uses the diffuse prior by default; `method="mc"` and `diffuse=False` keep the legacy behaviour.
+- Fix Monte Carlo calibration ignoring the gaps left by masked channels.
+- Compute the transition sigma scale from unmasked channels only.
+- Correct `SnrResult` for the choice of the best smoothness (`n_eff`) and combine p-values with Fisher's method; the old value is kept as `snr_kalman_legacy`.
+- Pass `n_eff` in the FRB example and regenerate its figures.
 
 ## 0.5.0 (2024-05-26)
 

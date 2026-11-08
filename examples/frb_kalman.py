@@ -1,4 +1,5 @@
 import sys
+from pathlib import Path
 
 import h5py
 import numpy as np
@@ -19,11 +20,12 @@ def kalman_calc(
     kalman = KalmanDetector(spec_std)
     kalman.prepare_fits(ntrials=ntrials)
     sig_kalman = kalman.get_best_significance(spec)
-    return SnrResult(frb_name, snr_box, sig_kalman)
+    return SnrResult(frb_name, snr_box, sig_kalman, n_eff=kalman.n_eff)
 
 # Load the frb waterfall data and detection parameters.
 frb_file = sys.argv[1] # "frb171004.h5"
-frb_name = frb_file.split(".")[0]
+frb_path = Path(frb_file)
+frb_name = frb_path.stem
 with h5py.File(frb_file, "r") as infile:
     dataset = infile["waterfall"]
     waterfall = np.array(dataset, dtype=float)
@@ -67,8 +69,8 @@ ax_dedisp.imshow(
 )
 xs = np.linspace(tstart, tstop, num=waterfall.shape[1])
 ax_prof.plot(xs, waterfall.mean(axis=0))
-box_text = "$\mathrm{{S/N}_{P}}$ = " + f"{snr_result.snr_box:.1f}"
-kal_text = "$\mathrm{{S/N}_{P+K}}$ = " + f"{snr_result.snr_kalman:.1f}"
+box_text = r"$\mathrm{{S/N}_{P}}$ = " + f"{snr_result.snr_box:.1f}"
+kal_text = r"$\mathrm{{S/N}_{P+K}}$ = " + f"{snr_result.snr_kalman:.1f}"
 ax_prof.text(0.75, 0.75, frb_name, transform=ax_prof.transAxes, fontsize=12)
 ax_prof.text(0.03, 0.85, box_text, transform=ax_prof.transAxes, fontsize=12)
 ax_prof.text(0.03, 0.65, kal_text, transform=ax_prof.transAxes, fontsize=12)
@@ -76,4 +78,4 @@ ax_prof.set_xlim(-60, 60)
 ax_dedisp.set_xlabel("Time (ms)")
 ax_dedisp.set_ylabel("Frequency (MHz)")
 fig.tight_layout()
-plt.savefig(f"{frb_name}_kalman.png", dpi=300)
+plt.savefig(frb_path.with_name(f"{frb_name}_kalman.png"), dpi=300)
