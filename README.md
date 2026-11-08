@@ -3,9 +3,10 @@
 [![GitHub CI](https://github.com/pravirkr/kalman_detector/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/pravirkr/kalman_detector/actions/workflows/ci.yml)
 [![codecov](https://codecov.io/gh/pravirkr/kalman_detector/branch/main/graph/badge.svg)](https://codecov.io/gh/pravirkr/kalman_detector)
 [![License](https://img.shields.io/github/license/pravirkr/kalman_detector)](https://github.com/pravirkr/kalman_detector/blob/main/LICENSE)
-[![Code style: black](https://img.shields.io/badge/code%20style-black-000000.svg)](https://github.com/psf/black)
+[![PyPI](https://img.shields.io/pypi/v/kalman_detector)](https://pypi.org/project/kalman_detector/)
+[![Ruff](https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/astral-sh/ruff/main/assets/badge/v2.json)](https://github.com/astral-sh/ruff)
 
-A Python Implementation of a Kalman filter detector for detecting smoothly variying signals hidden in gaussian noise, such as Fast Radio Bursts (FRBs).
+A Python Implementation of a Kalman filter detector for detecting smoothly varying signals hidden in gaussian noise, such as Fast Radio Bursts (FRBs).
 
 The detection statistic is designed to process `I(f)`, a sequence of observed "amplitudes" (where `f` is an arbitrary indexed parameter), and decide between the following hypotheses:
 
@@ -16,10 +17,22 @@ H1: I(f) = A(f) + N(f)  A(f) is a smooth gaussian process with an unknown smooth
 
 ## Installation
 
-The quickest way to install the package is to use [pip](https://pip.pypa.io):
+Python 3.12 or newer, on Linux or macOS.
 
 ```bash
 pip install -U kalman_detector
+```
+
+`uv pip install kalman_detector` works the same way. Changes are listed in the [changelog](CHANGELOG.md).
+
+## Development
+
+Clone the repository and install the development environment with [uv](https://docs.astral.sh/uv/):
+
+```bash
+uv sync
+uv run pytest
+uv run pre-commit install
 ```
 
 ## Usage
@@ -34,7 +47,7 @@ kalman.get_significance(spectrum)
 
 ### Example
 
-An example script demonstrating how to use the Kalman detector can be found in the [examples](examples/frb_kalman.py) directory.
+An example script demonstrating how to use the Kalman detector can be found in the [examples](examples/frb_kalman.py) directory. It reads the included HDF5 files and needs `h5py`, which is not installed with the package.
 
 |           |           |
 | --------- | --------- |
@@ -42,7 +55,7 @@ An example script demonstrating how to use the Kalman detector can be found in t
 
 ### Efficiency
 
-An example efficiency plot can be generates using:
+An example efficiency plot can be generated using:
 
 ```python
 python -m kalman_detector.efficiency

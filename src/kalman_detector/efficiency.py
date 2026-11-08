@@ -1,19 +1,22 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import TYPE_CHECKING
 
 import numpy as np
 from matplotlib import pyplot as plt
 from rich.progress import track
 from scipy import stats
-from uncertainties import unumpy
 
 from kalman_detector import utils
 from kalman_detector.main import KalmanDetector
 
-if TYPE_CHECKING:
-    from collections.abc import Callable
+
+@dataclass(frozen=True)
+class TrialStats:
+    """Mean and standard deviation of one quantity across Monte Carlo trials."""
+
+    mean: np.ndarray
+    std: np.ndarray
 
 
 @dataclass
@@ -26,36 +29,41 @@ class Result:
     def snr_sig(self) -> np.ndarray:
         return stats.norm.logsf(self.snr_emp)
 
+    @property
+    def efficiency(self) -> np.ndarray:
+        return 2 * self.kal_score / self.snr_emp**2
+
 
 class Results:
     def __init__(self, results: list[Result]) -> None:
         self.results = results
 
     @property
-    def kal_score(self) -> np.ndarray:
-        return self.get_unumpy("kal_score")
+    def kal_score(self) -> TrialStats:
+        return self.stats("kal_score")
 
     @property
-    def kal_sig(self) -> np.ndarray:
-        return self.get_unumpy("kal_sig")
+    def kal_sig(self) -> TrialStats:
+        return self.stats("kal_sig")
 
     @property
-    def snr_emp(self) -> np.ndarray:
-        return self.get_unumpy("snr_emp")
+    def snr_emp(self) -> TrialStats:
+        return self.stats("snr_emp")
 
     @property
-    def snr_sig(self) -> np.ndarray:
-        return self.get_unumpy("snr_sig")
+    def snr_sig(self) -> TrialStats:
+        return self.stats("snr_sig")
 
     @property
-    def efficiency(self) -> np.ndarray:
-        return 2 * self.kal_score / self.snr_emp**2
+    def efficiency(self) -> TrialStats:
+        return self.stats("efficiency")
 
-    def get_unumpy(self, key: str) -> np.ndarray:
-        return unumpy.uarray(self.get_item(key, np.mean), self.get_item(key, np.std))
-
-    def get_item(self, key: str, func: Callable = np.mean) -> np.ndarray:
-        return np.array([func(getattr(result, key)) for result in self.results])
+    def stats(self, key: str) -> TrialStats:
+        samples = [np.asarray(getattr(result, key)) for result in self.results]
+        return TrialStats(
+            mean=np.array([np.mean(sample) for sample in samples]),
+            std=np.array([np.std(sample) for sample in samples]),
+        )
 
 
 def monte_carlo(
@@ -129,11 +137,13 @@ def eff_plot(
     ax_prof.set_ylabel("Amplitude")
     ax_prof.set_ylim(-0.15, 0.15)
     for iresult, results in enumerate(results_ts):
+        snr = results.snr_emp
+        eff = results.efficiency
         ax_eff.errorbar(
-            unumpy.nominal_values(results.snr_emp),
-            unumpy.nominal_values(results.efficiency),
-            xerr=unumpy.std_devs(results.snr_emp),
-            yerr=unumpy.std_devs(results.efficiency),
+            snr.mean,
+            eff.mean,
+            xerr=snr.std,
+            yerr=eff.std,
             fmt="o",
             mec="k",
             mfc=colors[iresult],

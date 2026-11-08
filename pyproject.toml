@@ -38,7 +38,6 @@ dependencies = [
     "matplotlib>=3.10",
     "rich>=13.0",
     "sympy",
-    "uncertainties",
 ]
 
 [project.urls]
@@ -52,18 +51,11 @@ tests = [
     "pytest-cov",
     "pytest-randomly",
     "pytest-sugar",
-    "pytest-benchmark",
-    "pytest-mock",
-    "pytest-socket",
-    "hypothesis",
 ]
 dev = [
     { include-group = "tests" },
     "ruff",
     "ty",
-    "numpydoc",
-    "import-linter",
-    "towncrier",
     "pre-commit",
 ]
 

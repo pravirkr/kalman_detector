@@ -7,6 +7,8 @@
 - Set lower bounds on the runtime dependencies and drop `typing_extensions`.
 - Mark the package as typed with `py.typed`, and read `__version__` from the installed distribution.
 - Run tests with uv on Python 3.12, 3.13, and 3.14, and publish releases with `uv build`.
+- Compute Monte Carlo efficiency with NumPy and drop the `uncertainties` dependency.
+- Document the Python 3.12 install and the uv development setup.
 
 ## 0.5.0 (2024-05-26)
 
