@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import logging
 from dataclasses import dataclass, field
+from typing import NamedTuple
 
 import numpy as np
 import sympy as sp
@@ -517,3 +518,195 @@ def kalman_binary_compress(
     while len(states) > 1:
         states = [states[i] + states[i + 1] for i in range(0, len(states), 2)]
     return states[0]
+
+
+class BinaryTreeBank(NamedTuple):
+    """Data-independent coefficients of the diffuse canonical binary tree.
+
+    The spectrum is modelled as a gaussian random walk ``A_f`` (step variance
+    ``sig_eta**2``, flat prior on the level) observed with independent noise of
+    precision ``w_f = 1 / spec_std[f]**2`` (``w_f = 0`` for masked channels).
+    Every node ``[lo, hi)`` of the binary tree carries the 2x2 precision of its
+    end-point states; merging two siblings integrates out the two junction
+    states. Only the five folded coefficients of each merge are stored.
+
+    Attributes
+    ----------
+    weights : np.ndarray
+        Channel precisions ``w_f`` padded with zeros to ``npad`` (a power of two).
+    levels : dict[int, np.ndarray]
+        ``levels[size][lo // size] = (p00, p01, p11, m0, m1)`` for the merge
+        producing node ``[lo, lo + size)``. ``p = G / 2`` with ``G`` the inverse
+        of the junction Schur complement, ``m0 = -2 l`` and ``m1 = -2 r`` with
+        ``l`` and ``r`` the end-point couplings of the left and right child.
+    root : np.ndarray
+        ``(G00 / 2, G01, G11 / 2)`` of the inverse root end-point precision.
+    tree_const : float
+        Data-independent part of the full (diffuse) log likelihood ratio.
+    inv_var_sum : float
+        ``V_tot = sum(w_f)``.
+    nchans : int
+        Number of channels before padding.
+    """
+
+    weights: np.ndarray
+    levels: dict[int, np.ndarray]
+    root: np.ndarray
+    tree_const: float
+    inv_var_sum: float
+    nchans: int
+
+    @property
+    def contrast_const(self) -> float:
+        """Constant ``c_det`` of the mean-free contrast ``raw - F**2/(2 V) + c_det``."""
+        return self.tree_const + 0.5 * np.log(self.inv_var_sum / (2 * np.pi))
+
+
+def binary_tree_bank(
+    spec_std: np.ndarray,
+    sig_eta: float,
+    chan_mask: np.ndarray | None = None,
+) -> BinaryTreeBank:
+    """Per-node merge coefficients for heterogeneous noise and channel masks.
+
+    Parameters
+    ----------
+    spec_std : np.ndarray
+        1D array of per-channel noise standard deviations. Channels with
+        non-positive or non-finite std are treated as masked.
+    sig_eta : float
+        State transition std (same units as ``spec_std``).
+    chan_mask : np.ndarray, optional
+        Boolean mask of channels to ignore, by default None.
+
+    Returns
+    -------
+    BinaryTreeBank
+        Coefficients for a tree over ``npad = 2**ceil(log2(nchans))`` channels.
+        Padding channels are masked; masked channels at any position (including
+        the band edges or whole subtrees) leave the score unchanged, because an
+        unobserved random-walk segment integrates to one.
+
+    Raises
+    ------
+    ValueError
+        If ``sig_eta`` is not positive or all channels are masked.
+    """
+    spec_std = np.asarray(spec_std, dtype=np.float64)
+    nchans = len(spec_std)
+    if not sig_eta > 0:
+        msg = "sig_eta must be positive."
+        raise ValueError(msg)
+    valid = np.isfinite(spec_std) & (spec_std > 0)
+    if chan_mask is not None:
+        valid &= ~np.asarray(chan_mask, dtype=bool)
+    if not np.any(valid):
+        msg = "All channels are masked."
+        raise ValueError(msg)
+    npad = max(2, 1 << (nchans - 1).bit_length())
+    weights = np.zeros(npad)
+    weights[:nchans][valid] = 1 / spec_std[valid] ** 2
+    q = float(sig_eta) ** 2
+    # Node end-point precision J = [[s0 + k, -k], [-k, s1 + k]]: coupling k > 0
+    # and row sums s0, s1 >= 0 (observed information). Tracking (s0, s1, k)
+    # instead of J avoids the cancellation j00 + j01 for stiff chains, and every
+    # update below is a sum of non-negative terms.
+    # Leaf pairs [2i, 2i+2): one transition between the two channels.
+    s0 = weights[0::2].copy()
+    s1 = weights[1::2].copy()
+    k = np.full(npad // 2, 1 / q)
+    tree_const = -0.5 * (npad // 2) * np.log(2 * np.pi * q)
+    levels = {}
+    size = 4
+    while size <= npad:
+        kl, kr = k[0::2], k[1::2]
+        sl0, sl1, sr0, sr1 = s0[0::2], s1[0::2], s0[1::2], s1[1::2]
+        a, b = sl1 + kl, sr0 + kr
+        den = a + b + q * a * b
+        g00, g01, g11 = (1 + q * b) / den, 1 / den, (1 + q * a) / den
+        # Couplings l = -kl, r = -kr, so m0 = -2 l = 2 kl and m1 = 2 kr.
+        levels[size] = np.column_stack(
+            (0.5 * g00, 0.5 * g01, 0.5 * g11, 2 * kl, 2 * kr),
+        )
+        # Integrating out the two junction states and their transition.
+        tree_const += float(np.sum(0.5 * np.log(2 * np.pi / den)))
+        s0 = sl0 + kl * (sl1 * (1 + q * b) + sr0) / den
+        s1 = sr1 + kr * (sr0 * (1 + q * a) + sl1) / den
+        k = kl * kr / den
+        size *= 2
+    s0, s1, k = s0[0], s1[0], k[0]
+    det = s0 * s1 + k * (s0 + s1)
+    root = np.array([0.5 * (s1 + k) / det, k / det, 0.5 * (s0 + k) / det])
+    # Flat (diffuse) prior on the two end-point states of the whole band.
+    tree_const += np.log(2 * np.pi) - 0.5 * np.log(det)
+    return BinaryTreeBank(
+        weights=weights,
+        levels=levels,
+        root=root,
+        tree_const=float(tree_const),
+        inv_var_sum=float(np.sum(weights)),
+        nchans=nchans,
+    )
+
+
+def kalman_binary_compress_diffuse(
+    spec: np.ndarray,
+    spec_std: np.ndarray,
+    sig_t: float,
+    chan_mask: np.ndarray | None = None,
+    bank: BinaryTreeBank | None = None,
+) -> float:
+    """Diffuse Kalman contrast score by canonical binary-tree reduction.
+
+    Each node holds the float4 state ``(F, h0, h1, c)``: the inverse-variance
+    weighted sum, the two end-point information components and the quadratic
+    accumulator. Each merge costs 16 FLOPs per state (see ``binary_fdmt``):
+
+    ``u = p00 a + p01 b``, ``v = p01 a + p11 b``, ``F' = FL + FR``,
+    ``h0' = hL0 + m0 u``, ``h1' = hR1 + m1 v``, ``c' = cL + cR + a u + b v``
+    with ``a = hL1`` and ``b = hR0``.
+
+    Parameters
+    ----------
+    spec : np.ndarray
+        1D array of spectrum values (any length).
+    spec_std : np.ndarray
+        1D array of spectrum (noise) standard deviations.
+    sig_t : float
+        Standard deviation of the transition between states.
+    chan_mask : np.ndarray, optional
+        Boolean mask of channels to ignore, by default None.
+    bank : BinaryTreeBank, optional
+        Precomputed :func:`binary_tree_bank` for ``(spec_std, sig_t, chan_mask)``.
+
+    Returns
+    -------
+    float
+        The diffuse contrast score, equal to
+        ``kalman_filter(spec, spec_std, sig_t, chan_mask=chan_mask, diffuse=True)``.
+    """
+    if bank is None:
+        bank = binary_tree_bank(spec_std, sig_t, chan_mask)
+    spec = np.asarray(spec, dtype=np.float64)
+    if len(spec) != bank.nchans:
+        msg = f"spec has {len(spec)} channels, bank has {bank.nchans}."
+        raise ValueError(msg)
+    weights = bank.weights
+    info = np.zeros(len(weights))
+    obs = weights[: bank.nchans] > 0
+    info[: bank.nchans][obs] = weights[: bank.nchans][obs] * spec[obs]
+    h0, h1 = info[0::2], info[1::2]
+    flux = h0 + h1
+    quad = np.zeros_like(h0)
+    for size in sorted(bank.levels):
+        p00, p01, p11, m0, m1 = bank.levels[size].T
+        a, b = h1[0::2], h0[1::2]
+        u = p00 * a + p01 * b
+        v = p01 * a + p11 * b
+        flux = flux[0::2] + flux[1::2]
+        h0 = h0[0::2] + m0 * u
+        h1 = h1[1::2] + m1 * v
+        quad = quad[0::2] + quad[1::2] + a * u + b * v
+    r0, r1, r2 = bank.root
+    raw = quad[0] + r0 * h0[0] ** 2 + r1 * h0[0] * h1[0] + r2 * h1[0] ** 2
+    return float(raw - 0.5 * flux[0] ** 2 / bank.inv_var_sum + bank.contrast_const)

@@ -1,7 +1,9 @@
 import numpy as np
+import pytest
 import sympy as sp
 
 from kalman_detector import svm
+from kalman_detector.core import kalman_filter
 from kalman_detector.svm import State
 
 
@@ -197,3 +199,74 @@ class TestSVM:
         assert M2.equals(M2_simple)
         assert M2V2.equals(M2V2_simple)
         assert S2_factor.equals(S2_factor_simple)
+
+
+def _mask_case(nchans: int, case: str) -> np.ndarray:
+    mask = np.zeros(nchans, dtype=bool)
+    if case == "first":
+        mask[:3] = True
+    elif case == "last":
+        mask[-2:] = True
+    elif case == "quarter":
+        mask[nchans // 4 : nchans // 2] = True
+    elif case == "random":
+        mask[np.random.default_rng(nchans).random(nchans) < 0.3] = True
+    mask[nchans // 2] = False  # keep at least one observed channel
+    return mask
+
+
+class TestBinaryCompressDiffuse:
+    @pytest.mark.parametrize("nchans", [2, 3, 17, 64, 1000, 1024])
+    @pytest.mark.parametrize("case", ["none", "first", "last", "quarter", "random"])
+    @pytest.mark.parametrize("q", [1e-6, 1e-3, 0.1, 10.0])
+    def test_matches_kalman_filter(self, nchans: int, case: str, q: float) -> None:
+        rng = np.random.default_rng(nchans)
+        spec_std = 10 ** rng.uniform(-1, 1, nchans)
+        mask = _mask_case(nchans, case)
+        spec = rng.normal(0, spec_std) + 2 * np.sin(np.arange(nchans) / 7)
+        sig_eta = np.sqrt(q) * np.median(spec_std)
+        expected = kalman_filter(spec, spec_std, sig_eta, chan_mask=mask, diffuse=True)
+        result = svm.kalman_binary_compress_diffuse(spec, spec_std, sig_eta, mask)
+        # Measured worst relative error ~4e-12 (stiff chains included).
+        assert abs(result - expected) <= 1e-10 * max(1.0, abs(expected))
+
+    def test_masked_data_ignored_and_edges_unit_factor(self) -> None:
+        rng = np.random.default_rng(7)
+        spec_std = rng.lognormal(0, 0.3, 64)
+        spec = rng.normal(0, spec_std)
+        mask = np.zeros(64, dtype=bool)
+        mask[:5] = True
+        mask[-9:] = True
+        spec_nan = spec.copy()
+        spec_nan[mask] = np.nan
+        full = svm.kalman_binary_compress_diffuse(spec_nan, spec_std, 0.3, mask)
+        cut = svm.kalman_binary_compress_diffuse(spec[5:-9], spec_std[5:-9], 0.3)
+        np.testing.assert_allclose(full, cut, rtol=1e-12, atol=1e-12)
+
+    def test_bank_reuse_and_validation(self) -> None:
+        rng = np.random.default_rng(8)
+        spec_std = rng.lognormal(0, 0.3, 100)
+        bank = svm.binary_tree_bank(spec_std, 0.2)
+        assert len(bank.weights) == 128
+        assert set(bank.levels) == {4, 8, 16, 32, 64, 128}
+        assert bank.levels[8].shape == (16, 5)
+        np.testing.assert_allclose(bank.inv_var_sum, np.sum(1 / spec_std**2))
+        spec = rng.normal(0, spec_std)
+        np.testing.assert_allclose(
+            svm.kalman_binary_compress_diffuse(spec, spec_std, 0.2, bank=bank),
+            svm.kalman_binary_compress_diffuse(spec, spec_std, 0.2),
+        )
+        with pytest.raises(ValueError, match="channels"):
+            svm.kalman_binary_compress_diffuse(spec[:50], spec_std, 0.2, bank=bank)
+        with pytest.raises(ValueError, match="positive"):
+            svm.binary_tree_bank(spec_std, 0)
+        with pytest.raises(ValueError, match="masked"):
+            svm.binary_tree_bank(spec_std, 0.2, np.ones(100, dtype=bool))
+
+    def test_offset_invariance(self) -> None:
+        rng = np.random.default_rng(9)
+        spec_std = rng.lognormal(0, 0.3, 256)
+        spec = rng.normal(0, spec_std)
+        base = svm.kalman_binary_compress_diffuse(spec, spec_std, 0.1)
+        shifted = svm.kalman_binary_compress_diffuse(spec + 5.0, spec_std, 0.1)
+        np.testing.assert_allclose(base, shifted, rtol=1e-9)

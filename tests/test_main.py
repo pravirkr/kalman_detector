@@ -14,6 +14,7 @@ from kalman_detector.main import (
     TridiagonalSaddlepointDistribution,
     contrast_eigenvalues,
     secondary_spectrum_cumulative_chi2_score,
+    subband_edges,
 )
 
 
@@ -346,3 +347,130 @@ class TestSecondarySpectrym:
             scores_arr.append(score)
         score_mean = utils.get_snr_from_logsf(np.array(scores_arr).mean())
         np.testing.assert_allclose(score_mean, target_snr, rtol=0.2)
+
+
+class TestOffPulseAnchor:
+    @staticmethod
+    def _detector(nchans: int = 256) -> KalmanDetector:
+        spec_std = _masked_profile(nchans, seed=4)
+        det = KalmanDetector(spec_std)
+        det.prepare_fits()
+        return det
+
+    def test_anchor_moments_and_identity(self) -> None:
+        det = self._detector()
+        rng = np.random.default_rng(1)
+        off = rng.normal(0, 1, (400, det.nchans)) * det.spec_std
+        anchor = det.off_pulse_anchor(off)
+        assert anchor.n_off == 400
+        np.testing.assert_allclose(anchor.scale_ratio, 1, atol=0.2)
+        assert np.all(np.abs(anchor.mean_z) < 5)
+        # The empirical mean maps onto the calibrated null mean.
+        np.testing.assert_allclose(anchor.anchor(anchor.emp_mean), anchor.null_mean)
+
+    def test_anchor_corrects_misestimated_noise(self) -> None:
+        det = self._detector()
+        rng = np.random.default_rng(2)
+        raw, anchored = [], []
+        for _ in range(300):
+            # True noise is 25% larger than the spec_std given to the detector.
+            spec = rng.normal(0, 1.25, det.nchans) * det.spec_std
+            off = rng.normal(0, 1.25, (50, det.nchans)) * det.spec_std
+            raw.append(utils.sidak_logsf(det.get_best_significance(spec), det.n_eff))
+            anchored.append(
+                utils.sidak_logsf(det.get_best_significance(spec, off), det.n_eff),
+            )
+        alpha = np.log(0.05)
+        assert np.mean(np.array(raw) < alpha) > 0.8
+        assert np.mean(np.array(anchored) < alpha) < 0.1
+
+    def test_scores_unchanged_and_validation(self) -> None:
+        det = self._detector()
+        rng = np.random.default_rng(3)
+        spec = rng.normal(0, 1, det.nchans) * det.spec_std
+        off = rng.normal(0, 1, (60, det.nchans)) * det.spec_std
+        _, scores = det.get_significance(spec)
+        _, scores_anchored = det.get_significance(spec, off)
+        np.testing.assert_array_equal(scores, scores_anchored)
+        with pytest.raises(ValueError, match="shape"):
+            det.off_pulse_anchor(off[:, :10])
+        with pytest.raises(ValueError, match="at least 2"):
+            det.off_pulse_anchor(off[:1])
+
+    def test_anchor_with_mc_null(self) -> None:
+        spec_std = np.ones(64)
+        det = KalmanDetector(spec_std, q_par=[0.1])
+        det.prepare_fits(ntrials=2000, method="mc")
+        rng = np.random.default_rng(4)
+        anchor = det.off_pulse_anchor(rng.normal(0, 1, (100, 64)))
+        assert np.all(np.isfinite(anchor.null_std))
+        np.testing.assert_allclose(anchor.scale_ratio, 1, atol=0.3)
+
+    def test_anchor_legacy_statistic(self) -> None:
+        det = KalmanDetector(np.ones(64), q_par=[0.1], diffuse=False)
+        det.prepare_fits(ntrials=2000, method="mc")
+        rng = np.random.default_rng(5)
+        off = rng.normal(0, 1, (200, 64)) + 3.0  # offsets are normalized per row
+        anchor = det.off_pulse_anchor(off)
+        np.testing.assert_allclose(anchor.scale_ratio, 1, atol=0.3)
+        sigs, _ = det.get_significance(rng.normal(0, 1, 64), off)
+        assert np.all(np.isfinite(sigs))
+
+
+class TestLocalizedSignificance:
+    def test_subband_edges(self) -> None:
+        bands = subband_edges(256, 32)
+        dyadic = 1 + 2 + 4 + 8
+        staggered = 1 + 3 + 7
+        assert len(bands) == dyadic + staggered
+        assert (0, 256) in bands
+        assert (16, 48) in bands
+        assert all(b - a >= 32 for a, b in bands)
+        dyadic_only = subband_edges(256, 32, staggered=False)
+        assert dyadic_only[:3] == [(0, 256), (0, 128), (128, 256)]
+        assert len(subband_edges(300, 64)) == len(set(subband_edges(300, 64)))
+
+    def test_null_is_conservative(self) -> None:
+        rng = np.random.default_rng(5)
+        spec_std = _masked_profile(128, seed=5)
+        det = KalmanDetector(spec_std)
+        det.prepare_fits()
+        sigs = np.array(
+            [
+                det.get_localized_significance(
+                    rng.normal(0, 1, 128) * spec_std,
+                ).sig_corrected
+                for _ in range(1500)
+            ],
+        )
+        # Measured: 1.6% at alpha=5%, 0.4% at alpha=1% (256 channels, 6000 trials).
+        assert np.mean(sigs < np.log(0.05)) < 0.06
+        assert np.mean(sigs < np.log(0.01)) < 0.02
+
+    def test_narrowband_burst_is_localized(self) -> None:
+        rng = np.random.default_rng(6)
+        nchans = 1024
+        spec_std = rng.lognormal(0, 0.3, nchans)
+        det = KalmanDetector(spec_std)
+        det.prepare_fits()
+        signal = np.zeros(nchans)
+        signal[600:632] = 1.5 * spec_std[600:632]
+        spec = rng.normal(0, 1, nchans) * spec_std + signal
+        result = det.get_localized_significance(spec)
+        assert result.chan_start <= 616 <= result.chan_end
+        assert result.chan_end - result.chan_start <= 64
+        weights = 1 / spec_std**2
+        snr_full = np.sum(weights * spec) / np.sqrt(weights.sum())
+        sig_full = utils.fisher_logsf(
+            stats.norm.logsf(snr_full),
+            utils.sidak_logsf(det.get_best_significance(spec), det.n_eff),
+        )
+        assert result.sig_corrected < sig_full
+        assert result.snr > 5
+        assert result.n_subbands == len(subband_edges(nchans, 32))
+
+    def test_requires_diffuse(self) -> None:
+        det = KalmanDetector(np.ones(64), diffuse=False)
+        det.prepare_fits(ntrials=500, method="mc")
+        with pytest.raises(ValueError, match="diffuse"):
+            det.get_localized_significance(np.zeros(64))

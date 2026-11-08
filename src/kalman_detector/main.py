@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import logging
-from typing import ClassVar, Literal
+from typing import ClassVar, Literal, NamedTuple
 
 import numpy as np
 from matplotlib import pyplot as plt
@@ -11,11 +11,128 @@ from scipy import integrate, interpolate, optimize, special, stats
 from scipy.linalg import eigvalsh_tridiagonal
 
 from kalman_detector.core import kalman_filter_cached, prepare_gain_cache
-from kalman_detector.utils import effective_number_of_tests, normalize_spectrum
+from kalman_detector.utils import (
+    effective_number_of_tests,
+    fisher_logsf,
+    get_snr_from_logsf,
+    normalize_spectrum,
+    sidak_logsf,
+)
 
 logger = logging.getLogger(__name__)
 
 _LOG_SQRT_2PI = 0.5 * np.log(2 * np.pi)
+
+
+class OffPulseAnchor(NamedTuple):
+    """Empirical null moments of the Kalman score from off-pulse spectra.
+
+    Attributes
+    ----------
+    n_off : int
+        Number of off-pulse spectra.
+    emp_mean, emp_std : np.ndarray
+        Sample mean and std (ddof=1) of the off-pulse scores, per transit sigma.
+    null_mean, null_std : np.ndarray
+        Mean and std of the calibrated (analytic or MC) null, per transit sigma.
+    """
+
+    n_off: int
+    emp_mean: np.ndarray
+    emp_std: np.ndarray
+    null_mean: np.ndarray
+    null_std: np.ndarray
+
+    @property
+    def scale_ratio(self) -> np.ndarray:
+        """``emp_std / null_std``; ~1 when the noise model holds."""
+        return self.emp_std / self.null_std
+
+    @property
+    def mean_z(self) -> np.ndarray:
+        """Standardized offset of the empirical mean, ``~N(0, 1)`` under the model."""
+        return (self.emp_mean - self.null_mean) / (self.null_std / np.sqrt(self.n_off))
+
+    def anchor(self, scores: np.ndarray) -> np.ndarray:
+        """Map scores into the calibrated null frame by location-scale matching.
+
+        ``K' = null_mean + (K - emp_mean) * null_std / (emp_std * sqrt(1 + 1/n))``;
+        the ``sqrt(1 + 1/n)`` factor is the predictive inflation for the
+        estimated mean.
+        """
+        inflate = np.sqrt(1 + 1 / self.n_off)
+        return self.null_mean + (scores - self.emp_mean) * self.null_std / (
+            self.emp_std * inflate
+        )
+
+
+class LocalizedResult(NamedTuple):
+    """Subband-localized significance of a spectrum.
+
+    See :meth:`KalmanDetector.get_localized_significance`.
+
+    Attributes
+    ----------
+    chan_start, chan_end : int
+        Selected subband ``[chan_start, chan_end)``.
+    snr_box : float
+        Inverse-variance weighted S/N of the subband mean.
+    sig_box : float
+        One-sided normal log p-value of ``snr_box``.
+    sig_kalman : float
+        Diffuse Kalman contrast log p-value inside the subband, best over the
+        transit sigmas and corrected with the subband's ``n_eff``.
+    sig_combined : float
+        Fisher combination of ``sig_box`` and ``sig_kalman`` (independent for a
+        fixed subband).
+    n_subbands : int
+        Number of searched subbands.
+    sig_corrected : float
+        ``sig_combined`` corrected for the subband search (Sidak/Bonferroni over
+        ``n_subbands``).
+    """
+
+    chan_start: int
+    chan_end: int
+    snr_box: float
+    sig_box: float
+    sig_kalman: float
+    sig_combined: float
+    n_subbands: int
+    sig_corrected: float
+
+    @property
+    def snr(self) -> float:
+        """Gaussian-equivalent S/N of :attr:`sig_corrected`."""
+        return get_snr_from_logsf(self.sig_corrected)
+
+
+def subband_edges(
+    nchans: int,
+    min_subband_chans: int = 32,
+    *,
+    staggered: bool = True,
+) -> list[tuple[int, int]]:
+    """Dyadic (and half-shifted staggered) subbands ``[a, b)`` of a band.
+
+    Level ``k`` splits the band into ``2**k`` near-equal parts, down to the
+    finest level whose parts have at least ``min_subband_chans`` channels. The
+    full band is level 0. With ``staggered``, level ``k >= 1`` also includes the
+    ``2**k - 1`` subbands of the same size shifted by half a subband.
+    """
+    bands = []
+    level = 0
+    while nchans / 2**level >= min_subband_chans or level == 0:
+        nb = 2**level
+        edges = np.rint(np.linspace(0, nchans, nb + 1)).astype(int)
+        bands.extend(zip(edges[:-1].tolist(), edges[1:].tolist(), strict=True))
+        if staggered and nb > 1:
+            half = np.rint(np.linspace(0, nchans, 2 * nb + 1)).astype(int)
+            bands.extend(
+                zip(half[1:-2:2].tolist(), half[3::2].tolist(), strict=True),
+            )
+        level += 1
+    return list(dict.fromkeys(bands))
 
 
 class KalmanDetector:
@@ -68,6 +185,8 @@ class KalmanDetector:
         self._spec_std = np.asarray(spec_std, dtype=np.float64)
         self._diffuse = diffuse
         self._sig_ts = self._get_sig_ts(q_par)
+        self._q_arr = (self._sig_ts / np.median(self._spec_std[~self._mask])) ** 2
+        self._subdetectors: dict[tuple[int, int], KalmanDetector | None] = {}
         self._distributions: list | None = None
         self._caches: list | None = None
         self._n_eff: float | None = None
@@ -202,13 +321,20 @@ class KalmanDetector:
         ]
         self._method = method
 
-    def get_best_significance(self, spec: np.ndarray) -> float:
+    def get_best_significance(
+        self,
+        spec: np.ndarray,
+        off_pulse_specs: np.ndarray | None = None,
+    ) -> float:
         """Calculate the best kalman significance of 1d spectrum.
 
         Parameters
         ----------
         spec : numpy.ndarray
             1d spectrum data
+        off_pulse_specs : numpy.ndarray, optional
+            2d array ``(n_off, nchans)`` of off-pulse spectra used to anchor the
+            null (see :meth:`get_significance`), by default None.
 
         Returns
         -------
@@ -216,43 +342,192 @@ class KalmanDetector:
             The best kalman significance in logsf units (not corrected for the
             selection over transit sigmas; see :attr:`n_eff`).
         """
-        sigs, _scores = self.get_significance(spec)
+        sigs, _scores = self.get_significance(spec, off_pulse_specs)
         return np.min(sigs)
 
-    def get_significance(self, spec: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
+    def get_significance(
+        self,
+        spec: np.ndarray,
+        off_pulse_specs: np.ndarray | None = None,
+    ) -> tuple[np.ndarray, np.ndarray]:
         """Calculate the kalman score and significance of 1d spectrum.
 
         Parameters
         ----------
         spec : numpy.ndarray
             1d spectrum data
+        off_pulse_specs : numpy.ndarray, optional
+            2d array ``(n_off, nchans)`` of off-pulse spectra (e.g. 30-100
+            spectra from the waterfall around the candidate), by default None.
+            If given, each score is mapped into the calibrated null frame by
+            matching the empirical mean and std of the off-pulse scores (see
+            :meth:`off_pulse_anchor`) before its significance is evaluated.
 
         Returns
         -------
         tuple[numpy.ndarray, numpy.ndarray]
-            Kalman significance (logsf units) and the kalman score for each
-            transit sigma.
+            Kalman significance (logsf units) and the (un-anchored) kalman score
+            for each transit sigma.
+
+        Notes
+        -----
+        Anchoring is a robustness check against an imperfect noise model
+        (baseline drifts, channel covariance, misestimated ``spec_std``), not a
+        replacement for the analytic null. With ``n_off`` spectra the empirical
+        std carries a relative error of about ``1 / sqrt(2 n_off)`` (~10% for
+        50 spectra), which moves a 6 sigma significance by roughly 0.5 sigma.
+        Compare :attr:`OffPulseAnchor.scale_ratio` and
+        :attr:`OffPulseAnchor.mean_z` with their nominal values (1 and N(0, 1))
+        to judge whether anchoring is needed.
         """
+        spec_in = self._prepare_spec(spec)
+        scores = self._scores(spec_in)
+        anchored = scores
+        if off_pulse_specs is not None:
+            anchored = self.off_pulse_anchor(off_pulse_specs).anchor(scores)
+        significances = np.array(
+            [
+                dist.logsf(score)
+                for dist, score in zip(self.distributions, anchored, strict=True)
+            ],
+        )
+        return significances, scores
+
+    def off_pulse_anchor(self, off_pulse_specs: np.ndarray) -> OffPulseAnchor:
+        """Empirical null moments of the score from off-pulse spectra.
+
+        Parameters
+        ----------
+        off_pulse_specs : numpy.ndarray
+            2d array ``(n_off, nchans)`` of off-pulse spectra, ``n_off >= 2``.
+
+        Returns
+        -------
+        OffPulseAnchor
+            Empirical and calibrated null moments per transit sigma.
+        """
+        off = np.atleast_2d(np.asarray(off_pulse_specs, dtype=np.float64))
+        if off.ndim != 2 or off.shape[1] != self.nchans:
+            msg = f"off_pulse_specs must have shape (n_off, {self.nchans})."
+            raise ValueError(msg)
+        n_off = off.shape[0]
+        if n_off < 2:
+            msg = "Need at least 2 off-pulse spectra."
+            raise ValueError(msg)
+        if not self.diffuse:
+            off = np.array([self._prepare_spec(row) for row in off])
+        off_scores = np.array(
+            [kalman_filter_cached(off, cache) for cache in self._caches_checked()],
+        )
+        null = np.array([_null_moments(dist) for dist in self.distributions])
+        return OffPulseAnchor(
+            n_off=n_off,
+            emp_mean=off_scores.mean(axis=1),
+            emp_std=off_scores.std(axis=1, ddof=1),
+            null_mean=null[:, 0],
+            null_std=null[:, 1],
+        )
+
+    def get_localized_significance(
+        self,
+        spec: np.ndarray,
+        min_subband_chans: int = 32,
+        *,
+        staggered: bool = True,
+    ) -> LocalizedResult:
+        """Significance of the best subband for narrowband bursts.
+
+        The subband ``[a*, b*)`` with the largest positive inverse-variance
+        weighted S/N is selected among the dyadic (and staggered) subbands of
+        :func:`subband_edges`, including the full band. Inside it, the subband
+        S/N and the diffuse Kalman contrast are combined with Fisher's method
+        (for a fixed subband the two are exactly independent under gaussian
+        noise, because the contrast is mean-free), and the result is corrected
+        for the number of searched subbands. The correction bounds the
+        probability of the minimum p-value over all subbands, so it is valid
+        (conservative) for this data-dependent selection.
+
+        Parameters
+        ----------
+        spec : numpy.ndarray
+            1d spectrum data
+        min_subband_chans : int, optional
+            Smallest subband size, by default 32.
+        staggered : bool, optional
+            Include half-shifted subbands, by default True.
+
+        Returns
+        -------
+        LocalizedResult
+            The selected subband and its significances.
+
+        Notes
+        -----
+        Requires the diffuse statistic. The Kalman nulls of the subbands are
+        calibrated lazily (saddlepoint) and cached.
+        """
+        if not self.diffuse:
+            msg = "get_localized_significance requires diffuse=True."
+            raise ValueError(msg)
+        spec_in = self._prepare_spec(spec)
+        safe_std = np.where(self.mask, 1.0, self.spec_std)
+        weights = np.where(self.mask, 0.0, 1 / safe_std**2)
+        info = np.where(self.mask, 0.0, weights * spec_in)
+        cum_w = np.concatenate(([0.0], np.cumsum(weights)))
+        cum_h = np.concatenate(([0.0], np.cumsum(info)))
+        cum_n = np.concatenate(([0], np.cumsum(~self.mask)))
+        min_obs = 3
+        edges = subband_edges(self.nchans, min_subband_chans, staggered=staggered)
+        bands = [(a, b) for a, b in edges if cum_n[b] - cum_n[a] >= min_obs]
+        snrs = np.array(
+            [(cum_h[b] - cum_h[a]) / np.sqrt(cum_w[b] - cum_w[a]) for a, b in bands],
+        )
+        ibest = int(np.argmax(snrs))
+        a, b = bands[ibest]
+        sub = self._subdetector(a, b)
+        sig_box = float(stats.norm.logsf(snrs[ibest]))
+        sig_k = sidak_logsf(sub.get_best_significance(spec_in[a:b]), sub.n_eff)
+        sig_comb = fisher_logsf(sig_box, sig_k)
+        return LocalizedResult(
+            chan_start=a,
+            chan_end=b,
+            snr_box=float(snrs[ibest]),
+            sig_box=sig_box,
+            sig_kalman=sig_k,
+            sig_combined=sig_comb,
+            n_subbands=len(bands),
+            sig_corrected=sidak_logsf(sig_comb, len(bands)),
+        )
+
+    def _subdetector(self, start: int, end: int) -> KalmanDetector:
+        key = (start, end)
+        if key not in self._subdetectors:
+            std = np.where(self.mask[start:end], 0.0, self.spec_std[start:end])
+            sub = KalmanDetector(std, q_par=self._q_arr, mask_tol=self.mask_tol)
+            sub.prepare_fits(method="saddlepoint")
+            self._subdetectors[key] = sub
+        return self._subdetectors[key]
+
+    def _prepare_spec(self, spec: np.ndarray) -> np.ndarray:
         if len(spec) != self.nchans:
             msg = (
                 f"Length of signal spectrum ({len(spec)}) is not equal "
                 f"to the noise variance ({self.nchans})."
             )
             raise ValueError(msg)
-        distributions = self.distributions
         if self.diffuse:
             # The diffuse contrast score is exactly invariant to constant offsets.
-            spec_in = np.asarray(spec, dtype=np.float64)
-        else:
-            spec_in = normalize_spectrum(spec, self.spec_std, chan_mask=self.mask)
-        scores = np.empty(len(self.transit_sigmas))
-        significances = np.empty(len(self.transit_sigmas))
-        for ii, (cache, dist) in enumerate(
-            zip(self._caches, distributions, strict=True),
-        ):
-            scores[ii] = kalman_filter_cached(spec_in, cache)
-            significances[ii] = dist.logsf(scores[ii])
-        return significances, scores
+            return np.asarray(spec, dtype=np.float64)
+        return normalize_spectrum(spec, self.spec_std, chan_mask=self.mask)
+
+    def _caches_checked(self) -> list:
+        _ = self.distributions  # raises if not prepared
+        return self._caches
+
+    def _scores(self, spec_in: np.ndarray) -> np.ndarray:
+        return np.array(
+            [kalman_filter_cached(spec_in, cache) for cache in self._caches_checked()],
+        )
 
     def _get_sig_ts(
         self,
@@ -266,6 +541,14 @@ class KalmanDetector:
             q_arr = np.array([q_par], dtype=float)
         # Scale by the typical noise of the unmasked channels only.
         return np.sqrt(np.median(self.spec_std[~self.mask]) ** 2 * q_arr)
+
+
+def _null_moments(dist: object) -> tuple[float, float]:
+    """Mean and std of a calibrated null distribution."""
+    if isinstance(dist, QuadraticFormTail):
+        return dist.mean, float(np.sqrt(dist.var))
+    scores = np.asarray(dist.scores)
+    return float(scores.mean()), float(scores.std(ddof=1))
 
 
 def contrast_eigenvalues(

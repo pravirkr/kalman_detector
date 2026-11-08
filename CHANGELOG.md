@@ -12,10 +12,8 @@
 - Add the diffuse initial prior (`diffuse=True` or `v0=np.inf`) to `kalman_filter`, scoring the mean-free contrast likelihood ratio, which is invariant to constant offsets.
 - Add `prepare_gain_cache` and `kalman_filter_cached`, which precompute the Kalman gains once per noise profile and score single spectra or batches.
 - Calibrate `KalmanDetector` analytically by default (`prepare_fits(method="saddlepoint")`), using tridiagonal eigenvalues and a saddlepoint tail instead of Monte Carlo. `KalmanDetector` now uses the diffuse prior by default; `method="mc"` and `diffuse=False` keep the legacy behaviour.
-- Fix Monte Carlo calibration ignoring the gaps left by masked channels.
-- Compute the transition sigma scale from unmasked channels only.
 - Correct `SnrResult` for the choice of the best smoothness (`n_eff`) and combine p-values with Fisher's method; the old value is kept as `snr_kalman_legacy`.
-- Pass `n_eff` in the FRB example and regenerate its figures.
+- Add `binary_tree_bank` and `kalman_binary_compress_diffuse` to `svm`: the diffuse contrast score by a canonical binary-tree reduction (16-FLOP merge), for any channel count, per-channel noise and channel masks. It matches `kalman_filter(..., diffuse=True)` to about 1e-12.
 
 ## 0.5.0 (2024-05-26)
 
