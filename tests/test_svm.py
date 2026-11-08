@@ -187,12 +187,12 @@ class TestSVM:
         assert isinstance(res_mul, sp.Mul)
 
     def test_addition_rul_equivalence(self) -> None:
-        M2, M2V2, S2_factor, res_mul = svm.derive_addition_rule()
+        M2, M2V2, S2_factor, _res_mul = svm.derive_addition_rule()
         (
             M2_simple,
             M2V2_simple,
             S2_factor_simple,
-            res_mul_simple,
+            _res_mul_simple,
         ) = svm.derive_addition_rule_simple()
         assert M2.equals(M2_simple)
         assert M2V2.equals(M2V2_simple)

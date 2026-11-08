@@ -51,7 +51,7 @@ class Results:
     def efficiency(self) -> np.ndarray:
         return 2 * self.kal_score / self.snr_emp**2
 
-    def get_unumpy(self, key: str) -> unumpy.uarray:
+    def get_unumpy(self, key: str) -> np.ndarray:
         return unumpy.uarray(self.get_item(key, np.mean), self.get_item(key, np.std))
 
     def get_item(self, key: str, func: Callable = np.mean) -> np.ndarray:

@@ -132,7 +132,7 @@ class KalmanDetector:
         float
             The best kalman significance in logsf units.
         """
-        sigs, scores = self.get_significance(spec)
+        sigs, _scores = self.get_significance(spec)
         return np.min(sigs)
 
     def get_significance(self, spec: np.ndarray) -> tuple[np.ndarray, np.ndarray]:

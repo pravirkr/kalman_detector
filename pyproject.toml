@@ -1,55 +1,89 @@
 [build-system]
-requires = ["setuptools", "wheel"]
-build-backend = "setuptools.build_meta"
+requires = ["uv_build>=0.13.7,<0.14"]
+build-backend = "uv_build"
 
 [project]
 name = "kalman_detector"
 version = "0.5.0"
 description = "Detecting Fast Radio Bursts with Spectral Structures"
 readme = "README.md"
+license = "MIT"
+license-files = ["LICENSE"]
 authors = [
     { name = "Pravir Kumar", email = "pravirka@gmail.com" },
     { name = "Barak Zackay", email = "bzackay@gmail.com" },
 ]
-requires-python = ">=3.9"
+maintainers = [{ name = "Pravir Kumar", email = "pravirka@gmail.com" }]
+requires-python = ">=3.12"
+keywords = [
+    "fast radio bursts",
+    "radio astronomy",
+    "single pulse",
+]
 classifiers = [
     "Programming Language :: Python :: 3 :: Only",
-    "Programming Language :: Python :: 3.9",
-    "Programming Language :: Python :: 3.10",
-    "Programming Language :: Python :: 3.11",
     "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Programming Language :: Python :: 3.14",
     "Operating System :: MacOS :: MacOS X",
-    "Operating System :: Microsoft :: Windows",
     "Operating System :: POSIX :: Linux",
-    "License :: OSI Approved :: MIT License",
     "Development Status :: 5 - Production/Stable",
     "Intended Audience :: Science/Research",
     "Topic :: Scientific/Engineering :: Astronomy",
 ]
 dependencies = [
-    "numpy",
-    "numba",
-    "scipy",
-    "matplotlib",
-    "rich",
+    "numpy>=2.0",
+    "numba>=0.61",
+    "scipy>=1.13",
+    "matplotlib>=3.10",
+    "rich>=13.0",
     "sympy",
     "uncertainties",
-    "typing_extensions",
 ]
 
 [project.urls]
 Repository = "https://github.com/pravirkr/kalman_detector"
+Issues = "https://github.com/pravirkr/kalman_detector/issues"
+Changelog = "https://github.com/pravirkr/kalman_detector/blob/main/CHANGELOG.md"
 
-[project.optional-dependencies]
-tests = ["pytest", "pytest-cov", "pytest-randomly", "pytest-sugar", "mypy"]
-docs = ["sphinx", "sphinx-book-theme", "sphinx-click", "myst-nb"]
-develop = ["ruff"]
+[dependency-groups]
+tests = [
+    "pytest>=9.0",
+    "pytest-cov",
+    "pytest-randomly",
+    "pytest-sugar",
+    "pytest-benchmark",
+    "pytest-mock",
+    "pytest-socket",
+    "hypothesis",
+]
+dev = [
+    { include-group = "tests" },
+    "ruff",
+    "ty",
+    "numpydoc",
+    "import-linter",
+    "towncrier",
+    "pre-commit",
+]
+
+[tool.uv]
+default-groups = ["dev"]
+
+[tool.uv.build-backend]
+module-name = "kalman_detector"
+module-root = "src"
 
 [tool.ruff]
-include = ["pyproject.toml", "kalman_detector/**/*.py"]
+include = [
+    "pyproject.toml",
+    "src/**/*.py",
+    "src/**/*.pyi",
+    "tests/**/*.py",
+]
 line-length = 88
 indent-width = 4
-target-version = "py39"
+target-version = "py312"
 
 [tool.ruff.format]
 quote-style = "double"
@@ -57,27 +91,42 @@ indent-style = "space"
 
 [tool.ruff.lint]
 select = ["ALL"]
-ignore = ["D1", "ANN1", "PLR2004", "G004"]
+ignore = ["COM812", "CPY001", "D1", "D301", "PLR2004", "G004", "PLC0415"]
 
 [tool.ruff.lint.pylint]
-max-args = 10
+max-args = 15
+
+[tool.ruff.lint.mccabe]
+max-complexity = 15
 
 [tool.ruff.lint.pydocstyle]
 convention = "numpy"
 
 [tool.ruff.lint.per-file-ignores]
-"kalman_detector/svm.py" = ["N806"]
-"tests/*.py" = ["S101", "FBT", "PLR2004", "PT011", "SLF001", "N806"]
+"src/kalman_detector/svm.py" = ["N806"]
+"tests/**/*.py" = ["S101", "FBT", "PLR2004", "PT011", "SLF001", "N806"]
+
+[tool.ty.environment]
+python-version = "3.12"
+
+[tool.ty.src]
+include = ["src"]
+exclude = ["tests"]
+
+[tool.ty.rules]
+not-iterable = "ignore" # Numba prange and some ndarray protocols
 
 [tool.pytest.ini_options]
-minversion = "8.0"
-testpaths = "tests"
+minversion = "9.0"
+addopts = ["-ra", "-q"]
+testpaths = ["tests"]
+pythonpath = ["src"]
 
 [tool.coverage.paths]
-source = ["./kalman_detector/"]
+source = ["src/"]
 
 [tool.coverage.run]
-omit = ["tests/*", "docs/*", "*__init__.py", "kalman_detector/efficiency.py"]
+omit = ["tests/*", "docs/*", "*__init__.py", "*/kalman_detector/efficiency.py"]
 
 [tool.coverage.report]
 show_missing = true
@@ -89,7 +138,3 @@ exclude_lines = [
     'if __name__ == "__main__":',
     'if outfile_name is None:',
 ]
-
-[tool.mypy]
-ignore_missing_imports = true
-plugins = ["numpy.typing.mypy_plugin"]

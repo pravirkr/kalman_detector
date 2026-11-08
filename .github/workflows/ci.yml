@@ -2,48 +2,125 @@ name: GitHub CI
 
 on:
   push:
-    branches: [ main ]
+    branches: [main]
   pull_request:
-    branches: [ main ]
+    branches: [main]
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
-  build:
+  static-checks:
+    name: Ruff & ty
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
 
+      - name: Install uv & Python
+        uses: astral-sh/setup-uv@v10.2.0
+        with:
+          enable-cache: true
+          python-version: "3.12"
+
+      - name: Install dev tools
+        run: uv sync --group dev
+
+      - name: Ruff lint
+        run: uv run ruff check
+
+      - name: Ruff format
+        run: uv run ruff format --check
+
+      - name: Type check
+        run: uv run ty check
+
+  test:
+    name: pytest (${{ matrix.os }}, Python ${{ matrix.python-version }})
     runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-latest]
-        python-version: ['3.9', '3.10', '3.11']
+        include:
+          - os: ubuntu-latest
+            python-version: "3.12"
+            coverage: true
+          - os: macos-latest
+            python-version: "3.12"
+            coverage: false
+
+    env:
+      MPLBACKEND: Agg
 
     steps:
-    - uses: actions/checkout@v4
-    - name: Set up Python ${{ matrix.python-version }}
-      uses: actions/setup-python@v5
-      with:
-        python-version: ${{ matrix.python-version }}
-    - name: Install it
-      run: |
-        python -m pip install -U pip setuptools wheel
-        python -m pip install .[tests] -v
-    - name: Lint with Ruff
-      uses: chartboost/ruff-action@v1
-      with:
-        args: "check"
-      continue-on-error: true
-    - name: Check types with mypy
-      run: |
-        mypy ./kalman_detector/
-      continue-on-error: true
-    - name: Run pytest and Generate coverage report
-      run: |
-        pytest --cov=./ --cov-report=xml
-      continue-on-error: false
-    - name: Upload coverage reports to Codecov
-      uses: codecov/codecov-action@v4
-      with:
-        file: ./coverage.xml
-        name: codecov-umbrella
-        fail_ci_if_error: true
-      env:
-        CODECOV_TOKEN: ${{ secrets.CODECOV_TOKEN }}
+      - uses: actions/checkout@v7
+
+      - name: Install uv & Python
+        uses: astral-sh/setup-uv@v10.2.0
+        with:
+          enable-cache: true
+          python-version: ${{ matrix.python-version }}
+
+      - name: Install package with test dependencies
+        run: uv sync --no-default-groups --group tests
+
+      - name: Run pytest
+        if: ${{ !matrix.coverage }}
+        run: uv run pytest
+
+      - name: Run pytest with line coverage
+        if: matrix.coverage
+        env:
+          NUMBA_NUM_THREADS: "2"
+          NUMBA_JIT_COVERAGE: "1"
+          NUMBA_CACHE_DIR: ${{ runner.temp }}/numba-coverage-${{ github.run_id }}-${{ github.run_attempt }}
+        run: uv run pytest --cov=src --cov-report=xml --cov-report=term-missing
+
+      - name: Upload coverage
+        if: matrix.coverage
+        uses: codecov/codecov-action@v7
+        with:
+          files: ./coverage.xml
+          name: python-and-numba-compilation
+          fail_ci_if_error: true
+        env:
+          CODECOV_TOKEN: ${{ secrets.CODECOV_TOKEN }}
+
+  distributions:
+    name: distribution build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Install uv & Python
+        uses: astral-sh/setup-uv@v10.2.0
+        with:
+          enable-cache: true
+          python-version: "3.12"
+
+      - name: Build the wheel
+        run: uv build
+
+      - name: Check distribution metadata
+        run: uvx twine check dist/*
+
+      - name: Import from the installed wheel
+        run: |
+          uv venv /tmp/kalman-detector-wheel
+          uv pip install --python /tmp/kalman-detector-wheel/bin/python dist/*.whl
+          cd /tmp
+          /tmp/kalman-detector-wheel/bin/python - <<'PY'
+          import inspect
+          import pathlib
+
+          import kalman_detector
+          from kalman_detector.main import KalmanDetector
+
+          location = pathlib.Path(inspect.getfile(kalman_detector))
+          if "site-packages" not in location.parts:
+              raise SystemExit(f"imported from the checkout: {location}")
+          if not (location.parent / "py.typed").is_file():
+              raise SystemExit(f"py.typed missing from {location.parent}")
+          assert KalmanDetector is not None
+          PY

@@ -198,8 +198,8 @@ class State:
         State
             Sum of the two states.
         """
-        M000, M001, M010, M011 = self.m.flatten()
-        M100, M101, M110, M111 = other.m.flatten()
+        M000, _M001, M010, M011 = self.m.flatten()
+        M100, _M101, M110, M111 = other.m.flatten()
         v00, v01 = self.v.flatten()
         v10, v11 = other.v.flatten()
         s_t = self.s_t
@@ -345,8 +345,8 @@ class State:
         State
             Sum of the two states.
         """
-        M000, M001, M010, M011 = self.m.flatten()
-        M100, M101, M110, M111 = other.m.flatten()
+        M000, _M001, M010, M011 = self.m.flatten()
+        M100, _M101, M110, M111 = other.m.flatten()
         v00, v01 = self.v.flatten()
         v10, v11 = other.v.flatten()
         s_t = self.s_t
