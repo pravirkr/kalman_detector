@@ -14,6 +14,7 @@
 - Calibrate `KalmanDetector` analytically by default (`prepare_fits(method="saddlepoint")`), using tridiagonal eigenvalues and a saddlepoint tail instead of Monte Carlo. `KalmanDetector` now uses the diffuse prior by default; `method="mc"` and `diffuse=False` keep the legacy behaviour.
 - Correct `SnrResult` for the choice of the best smoothness (`n_eff`) and combine p-values with Fisher's method; the old value is kept as `snr_kalman_legacy`.
 - Add `binary_tree_bank` and `kalman_binary_compress_diffuse` to `svm`: the diffuse contrast score by a canonical binary-tree reduction (16-FLOP merge), for any channel count, per-channel noise and channel masks. It matches `kalman_filter(..., diffuse=True)` to about 1e-12.
+- Take the default `v0` of `kalman_filter` and `prepare_gain_cache` from the unmasked channels only.
 
 ## 0.5.0 (2024-05-26)
 

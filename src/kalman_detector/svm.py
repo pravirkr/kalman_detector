@@ -128,6 +128,11 @@ def derive_addition_rule_simple() -> tuple:
 class State:
     """Complex State of the Binary Kalman.
 
+    Legacy seven-scalar moment form of Kumar, Zackay & Law (2024), Appendix B,
+    kept for reproducibility. :class:`BinaryTreeBank` and
+    :func:`kalman_binary_compress_diffuse` implement the canonical
+    information-form tree used for new work.
+
     Parameters
     ----------
     log_s : float
@@ -488,6 +493,11 @@ def kalman_binary_compress(
     v0: float,
 ) -> State:
     """Kalman binary compression for a spectrum.
+
+    Legacy moment-form tree of Kumar, Zackay & Law (2024), Appendix B, kept to
+    reproduce that paper (see :func:`~kalman_detector.core.kalman_filter_binary`).
+    Requires a power-of-two number of channels; no channel mask. For new work
+    use :func:`kalman_binary_compress_diffuse`.
 
     Parameters
     ----------

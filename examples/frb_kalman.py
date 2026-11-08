@@ -1,3 +1,9 @@
+"""Kalman significance of the ASKAP example bursts.
+
+Run from the repository root (h5py is not a package dependency):
+``uv run --with h5py python examples/frb_kalman.py examples/frb171004.h5``
+"""
+
 import sys
 from pathlib import Path
 
@@ -7,23 +13,10 @@ from matplotlib import pyplot as plt
 from numpy import ma
 
 from kalman_detector.main import KalmanDetector
-from kalman_detector.utils import SnrResult
-
-
-def kalman_calc(
-    frb_name: str,
-    spec: np.ndarray,
-    spec_std: np.ndarray,
-    snr_box: float,
-    ntrials: int = 10000,
-) -> SnrResult:
-    kalman = KalmanDetector(spec_std)
-    kalman.prepare_fits(ntrials=ntrials)
-    sig_kalman = kalman.get_best_significance(spec)
-    return SnrResult(frb_name, snr_box, sig_kalman, n_eff=kalman.n_eff)
+from kalman_detector.utils import SnrResult, sidak_logsf
 
 # Load the frb waterfall data and detection parameters.
-frb_file = sys.argv[1] # "frb171004.h5"
+frb_file = sys.argv[1]  # "frb171004.h5"
 frb_path = Path(frb_file)
 frb_name = frb_path.stem
 with h5py.File(frb_file, "r") as infile:
@@ -43,9 +36,45 @@ mx_off = ma.masked_array(waterfall, mask=~mask, copy=True)
 spec = mx_on.sum(axis=-1).data
 spec_std = mx_off.std(axis=-1).data * np.sqrt(pulse_width)
 
-# Calculate the Kalman significance and the combined S/N.
-snr_result = kalman_calc(frb_name, spec, spec_std, snr_boxcar)
+# Off-pulse spectra: sums over pulse_width bins, away from the burst.
+guard = 50
+start, stop = on_pulse_bins
+off_starts = [
+    t
+    for t in range(0, waterfall.shape[1] - pulse_width + 1, pulse_width)
+    if t + pulse_width <= start - guard or t >= stop + guard
+]
+off_specs = np.array([waterfall[:, t : t + pulse_width].sum(axis=1) for t in off_starts])
+
+# Calibrate the null analytically (saddlepoint) and score the burst.
+kalman = KalmanDetector(spec_std)
+kalman.prepare_fits()
+snr_result = SnrResult(
+    frb_name,
+    snr_boxcar,
+    kalman.get_best_significance(spec),
+    n_eff=kalman.n_eff,
+)
 print(snr_result)
+
+# Robustness check: compare the analytic null with the off-pulse scores.
+anchor = kalman.off_pulse_anchor(off_specs)
+sig_anchored = sidak_logsf(kalman.get_best_significance(spec, off_specs), kalman.n_eff)
+print(
+    f"            Off-pulse check ({anchor.n_off} spectra): "
+    f"std ratio {np.round(anchor.scale_ratio, 2)}, "
+    f"mean offset (sigma) {np.round(anchor.mean_z, 1)}\n"
+    f"            Kalman Sig: {-snr_result.sig_kalman_corrected:.1f} analytic, "
+    f"{-sig_anchored:.1f} anchored",
+)
+
+# Narrowband check: best subband S/N combined with its Kalman contrast.
+local = kalman.get_localized_significance(spec)
+print(
+    f"            Localized: channels [{local.chan_start}, {local.chan_end}), "
+    f"subband S/N {local.snr_box:.1f}, corrected S/N {local.snr:.1f} "
+    f"({local.n_subbands} subbands)",
+)
 
 
 # Plot the waterfall and profile. Pulse is centered at 0 ms.

@@ -207,6 +207,34 @@ class TestKalmanFilterCached:
             atol=1e-10,
         )
 
+    def test_default_v0_ignores_masked_channels(self) -> None:
+        rng = np.random.default_rng(6)
+        spec_std = rng.lognormal(0, 0.3, 128)
+        mask = np.zeros(128, dtype=bool)
+        mask[:60] = True
+        spec_std[mask] = 0  # masked channels flagged by zero std
+        spec = rng.normal(0, np.where(mask, 1, spec_std))
+        v0 = np.median(spec_std[~mask]) ** 2
+        expected = kalman_filter(spec, spec_std, 0.2, v0=v0, chan_mask=mask)
+        np.testing.assert_allclose(
+            kalman_filter(spec, spec_std, 0.2, chan_mask=mask),
+            expected,
+        )
+        cache = prepare_gain_cache(spec_std, 0.2, chan_mask=mask)
+        np.testing.assert_allclose(kalman_filter_cached(spec, cache), expected)
+
+    def test_legacy_binary_requires_power_of_two(self) -> None:
+        rng = np.random.default_rng(7)
+        spec_std = rng.lognormal(0, 0.3, 64)
+        spec = rng.normal(0, spec_std)
+        np.testing.assert_allclose(
+            kalman_filter_binary(spec, spec_std, 0.3),
+            kalman_filter(spec, spec_std, 0.3),
+            rtol=1e-8,
+        )
+        with pytest.raises(IndexError):
+            kalman_filter_binary(spec[:48], spec_std[:48], 0.3)
+
     def test_explicit_v0(self) -> None:
         rng = np.random.default_rng(4)
         spec_std, mask = _random_profile(rng, 256)

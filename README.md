@@ -39,15 +39,45 @@ uv run pre-commit install
 
 ```python
 from kalman_detector.main import KalmanDetector
+from kalman_detector.utils import SnrResult
 
-kalman = KalmanDetector(spectrum_std)
-kalman.prepare_fits(ntrials=10000)
-kalman.get_significance(spectrum)
+kalman = KalmanDetector(spectrum_std)  # zero std flags a masked channel
+kalman.prepare_fits()                  # analytic null, no Monte Carlo
+sigs, scores = kalman.get_significance(spectrum)  # log p-value and score per q
+
+# Combine with the box-car S/N, correcting for the choice of the best q.
+result = SnrResult("burst", snr_box, kalman.get_best_significance(spectrum), n_eff=kalman.n_eff)
+print(result.snr_kalman)
 ```
+
+By default the detector uses the diffuse prior: the score is the likelihood ratio of the spectral contrast, which ignores a constant offset of the spectrum. `prepare_fits()` computes its null distribution analytically for any channel mask (tridiagonal eigenvalues and a saddlepoint tail, about 20 ms for 1024 channels and 8 values of q). `KalmanDetector(spectrum_std, diffuse=False)` with `prepare_fits(ntrials=10000, method="mc")` gives the Monte Carlo calibration of Kumar, Zackay & Law (2024).
+
+Two optional checks for candidates from real data:
+
+```python
+# Compare the analytic null with the scores of off-pulse spectra (n_off, nchans),
+# and anchor the significance to them.
+anchor = kalman.off_pulse_anchor(off_pulse_spectra)
+print(anchor.scale_ratio, anchor.mean_z)  # ~1 and ~N(0, 1) when the noise model holds
+sigs, scores = kalman.get_significance(spectrum, off_pulse_spectra)
+
+# Narrowband bursts: best subband S/N combined with its Kalman contrast,
+# corrected for the number of subbands searched.
+local = kalman.get_localized_significance(spectrum)
+print(local.chan_start, local.chan_end, local.snr)
+```
+
+The anchor repairs a misestimated noise model, but it is slightly optimistic when the model is already right, so use it as a check. The localized significance gains most for bursts narrower than about 1/16 of the band, and loses a little for broadband bursts.
+
+`kalman_detector.svm.kalman_binary_compress_diffuse` computes the same diffuse score with the binary-tree (FDMT-style) merge, for any number of channels and with masks. The moment-form tree of the 2024 paper (`kalman_filter_binary`, `svm.State`) is kept to reproduce that paper; it needs a power-of-two number of channels and no mask.
 
 ### Example
 
-An example script demonstrating how to use the Kalman detector can be found in the [examples](examples/frb_kalman.py) directory. It reads the included HDF5 files and needs `h5py`, which is not installed with the package.
+The [example script](examples/frb_kalman.py) scores the two included ASKAP bursts, prints the off-pulse check and the localized result, and plots the waterfall. It needs `h5py`, which is not installed with the package:
+
+```bash
+uv run --with h5py python examples/frb_kalman.py examples/frb171004.h5
+```
 
 |           |           |
 | --------- | --------- |

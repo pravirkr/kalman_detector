@@ -34,7 +34,8 @@ def kalman_filter(
         Ignored for the diffuse prior.
     v0 : float, optional
         Initial guess of model variance in first channel, by default None
-        (median(spec_std)**2). ``v0=np.inf`` selects the diffuse prior.
+        (median of the unmasked ``spec_std``, squared). ``v0=np.inf`` selects
+        the diffuse prior.
     chan_mask : np.ndarray, optional
         mask of channels to ignore, by default None
     diffuse : bool, optional
@@ -59,10 +60,10 @@ def kalman_filter(
     offsets of the spectrum and to frequency reversal, so no
     ``normalize_spectrum`` is needed.
     """
-    v_init = np.median(spec_std) ** 2 if v0 is None else v0
     nchans = len(spec)
     if chan_mask is None:
         chan_mask = np.zeros(nchans, dtype=np.bool_)
+    v_init = np.median(spec_std[~chan_mask]) ** 2 if v0 is None else v0
 
     v_transit = sig_eta**2
     if diffuse or np.isinf(v_init):
@@ -181,7 +182,8 @@ def prepare_gain_cache(
     e0 : float, optional
         Initial guess of model expectation value, by default 0 (non-diffuse only).
     v0 : float, optional
-        Initial guess of model variance, by default None (median(spec_std)**2).
+        Initial guess of model variance, by default None (median of the
+        unmasked ``spec_std``, squared).
         ``v0=np.inf`` selects the diffuse prior.
     diffuse : bool, optional
         Use the diffuse initial prior (1/v0 = 0), by default False.
@@ -199,7 +201,7 @@ def prepare_gain_cache(
     if len(obs_idx) == 0:
         msg = "All channels are masked."
         raise ValueError(msg)
-    v_init = np.median(spec_std) ** 2 if v0 is None else v0
+    v_init = np.median(spec_std[obs_idx]) ** 2 if v0 is None else v0
     diffuse = diffuse or bool(np.isinf(v_init))
     v_transit = sig_eta**2
     r_obs = spec_std[obs_idx] ** 2
@@ -364,6 +366,14 @@ def kalman_filter_binary(
     v0: float | None = None,
 ) -> float:
     """Kalman score estimator for input 1d spectrum data in binary search tree.
+
+    Legacy implementation of Kumar, Zackay & Law (2024), Appendix B, kept to
+    reproduce that paper. It uses the moment-form :class:`~kalman_detector.svm.State`
+    with a finite initial prior ``(e0, v0)`` and equals
+    ``kalman_filter(spec, spec_std, sig_eta, e0, v0)``. It requires a
+    power-of-two number of channels and supports no channel mask. For new
+    work use :func:`~kalman_detector.svm.kalman_binary_compress_diffuse`
+    (diffuse prior, any channel count, masks, 16-FLOP canonical merge).
 
     Parameters
     ----------
