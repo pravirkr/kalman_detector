@@ -98,6 +98,61 @@ class TestUtils:
         np.testing.assert_equal(len(signal), nchans)
         np.testing.assert_almost_equal(np.mean(signal), 0, decimal=1)
 
+    def test_simulate_ar1_signal(self) -> None:
+        rng = np.random.default_rng(42)
+        sig = utils.simulate_ar1_signal(256, alpha=0.95, sig_eta=0.1, rng=rng)
+        assert sig.shape == (256,)
+        np.testing.assert_allclose(np.mean(sig), 0.0, atol=1e-12)
+        np.testing.assert_allclose(np.linalg.norm(sig), 1.0, atol=1e-12)
+        # Random-walk branch (alpha = 1) without normalization.
+        rw = utils.simulate_ar1_signal(
+            128, alpha=1.0, sig_eta=0.2, beta=1.0, normalize_norm=False, rng=rng
+        )
+        assert rw.shape == (128,)
+        np.testing.assert_allclose(rw[0], 1.0)
+
+    def test_simulate_scintillation_2d(self) -> None:
+        rng = np.random.default_rng(7)
+        phase_map, spectra = utils.simulate_scintillation_2d(
+            nchans=64, n_pix=32, rng=rng
+        )
+        assert phase_map.shape == (32, 32)
+        assert spectra.shape == (64, 32)
+        assert np.all(spectra >= 0)
+
+    def test_extract_waterfall_spectrum(self) -> None:
+        rng = np.random.default_rng(11)
+        wf = rng.normal(0.0, 1.0, size=(64, 200))
+        wf[:16, 95:105] += 3.0
+        spec, spec_std, snr_box, off_specs = utils.extract_waterfall_spectrum(
+            wf, (95, 105), guard_bins=20
+        )
+        assert spec.shape == (64,)
+        assert spec_std.shape == (64,)
+        assert snr_box > 3.0
+        assert off_specs.ndim == 2
+        assert off_specs.shape[1] == 64
+
+        spec_pw, std_pw, snr_pw, off_pw = utils.extract_waterfall_spectrum(
+            wf, (95, 105), profile_weighted=True, guard_bins=20
+        )
+        assert spec_pw.shape == (64,)
+        assert std_pw.shape == (64,)
+        assert snr_pw > 3.0
+        assert off_pw.shape == off_specs.shape
+
+    def test_fit_spectral_running(self) -> None:
+        freqs = np.linspace(400.0, 800.0, 128)
+        f0 = 600.0
+        x = freqs / f0
+        true_spec = 10.0 * (x ** (1.5 - 8.0 * np.log(x)))
+        fit = utils.fit_spectral_running(freqs, true_spec, f0=f0)
+        np.testing.assert_allclose(fit["amp"], 10.0, rtol=1e-2)
+        np.testing.assert_allclose(fit["gamma"], 1.5, atol=5e-2)
+        np.testing.assert_allclose(fit["beta"], -8.0, rtol=2e-2)
+        expected_peak = f0 * np.exp(-1.5 / (2.0 * -8.0))
+        np.testing.assert_allclose(fit["peak_freq"], expected_peak, rtol=1e-2)
+
 
 class TestSnrResult:
     def test_init(self) -> None:

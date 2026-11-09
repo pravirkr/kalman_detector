@@ -44,7 +44,9 @@ off_starts = [
     for t in range(0, waterfall.shape[1] - pulse_width + 1, pulse_width)
     if t + pulse_width <= start - guard or t >= stop + guard
 ]
-off_specs = np.array([waterfall[:, t : t + pulse_width].sum(axis=1) for t in off_starts])
+off_specs = np.array(
+    [waterfall[:, t : t + pulse_width].sum(axis=1) for t in off_starts],
+)
 
 # Calibrate the null analytically (saddlepoint) and score the burst.
 kalman = KalmanDetector(spec_std)

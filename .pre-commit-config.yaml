@@ -8,8 +8,8 @@ repos:
     hooks:
       - id: ruff-check
         types_or: [python, pyi]
-        files: ^(src/|tests/|benchmarks/|pyproject\.toml)
+        files: ^(src/|tests/|examples/|benchmarks/|pyproject\.toml)
         args: [--fix]
       - id: ruff-format
         types_or: [python, pyi]
-        files: ^(src/|tests/|pyproject\.toml)
+        files: ^(src/|tests/|examples/|pyproject\.toml)

@@ -186,7 +186,7 @@ class KalmanDetector:
         self._diffuse = diffuse
         self._sig_ts = self._get_sig_ts(q_par)
         self._q_arr = (self._sig_ts / np.median(self._spec_std[~self._mask])) ** 2
-        self._subdetectors: dict[tuple[int, int], KalmanDetector | None] = {}
+        self._subdetectors: dict[tuple[int, int], KalmanDetector] = {}
         self._distributions: list | None = None
         self._caches: list | None = None
         self._n_eff: float | None = None
@@ -521,7 +521,9 @@ class KalmanDetector:
         return normalize_spectrum(spec, self.spec_std, chan_mask=self.mask)
 
     def _caches_checked(self) -> list:
-        _ = self.distributions  # raises if not prepared
+        if self._caches is None:
+            msg = "Distributions are not prepared. Call prepare_fits() first."
+            raise RuntimeError(msg)
         return self._caches
 
     def _scores(self, spec_in: np.ndarray) -> np.ndarray:
@@ -543,7 +545,9 @@ class KalmanDetector:
         return np.sqrt(np.median(self.spec_std[~self.mask]) ** 2 * q_arr)
 
 
-def _null_moments(dist: object) -> tuple[float, float]:
+def _null_moments(
+    dist: QuadraticFormTail | KalmanDistribution,
+) -> tuple[float, float]:
     """Mean and std of a calibrated null distribution."""
     if isinstance(dist, QuadraticFormTail):
         return dist.mean, float(np.sqrt(dist.var))
@@ -864,14 +868,20 @@ class TridiagonalSaddlepointDistribution(QuadraticFormTail):
         Passed to :class:`QuadraticFormTail`.
     """
 
-    def __init__(self, mu: np.ndarray, sig_eta: float, **kwargs: float) -> None:
+    def __init__(
+        self,
+        mu: np.ndarray,
+        sig_eta: float,
+        *,
+        n_grid: int = 160,
+    ) -> None:
         mu = np.asarray(mu, dtype=np.float64)
         q_var = sig_eta**2
         self._sig_eta = sig_eta
         self._mu = mu
         lambdas = q_var / (q_var + mu)
         const = -0.5 * float(np.sum(np.log1p(q_var / mu)))
-        super().__init__(lambdas, const, **kwargs)
+        super().__init__(lambdas, const, n_grid=n_grid)
 
     @property
     def sig_eta(self) -> float:
@@ -1116,8 +1126,15 @@ def secondary_spectrum_cumulative_chi2_score(
     spec: np.ndarray,
     spec_std: np.ndarray,
     mask_tol: float = 1e-5,
+    *,
+    trials_corrected: bool = False,
 ) -> float:
-    """Compute the cumulative-chi2 test statistic on sig.
+    """Compute the secondary-spectrum (Fourier-domain) cumulative-chi2 significance.
+
+    Forms the 1D real DFT power spectrum (secondary/delay spectrum) of the
+    standardized frequency spectrum ``z_f = spec_f / spec_std_f`` and evaluates
+    the cumulative sum of the lowest ``M`` non-DC Fourier modes for all sharp
+    low-pass cutoffs ``M = 1, ..., N // 2`` against a ``chi2(2 * M)`` null.
 
     Parameters
     ----------
@@ -1127,29 +1144,34 @@ def secondary_spectrum_cumulative_chi2_score(
         1D array of the standard deviation of the observed spectrum.
     mask_tol : float, optional
         The absolute tolerance to flag standard deviation values, by default 1e-5.
+    trials_corrected : bool, optional
+        If True, apply a Sidak look-elsewhere correction for the ``N // 2``
+        cutoff trials, by default False (legacy behavior).
 
     Returns
     -------
     float
-        Best significance in logsf units (max_f0 of ln(P(sig|H1,ff0)/P(sig|H0)))
+        Best significance in logsf units (<= 0).
 
     Notes
     -----
-    Would compute the cumulative-chi2 test statistic on sig.
-    Assumes the signal is composed of i.i.d N(E,1) variables ($E$ would be ignored).
-    Would return the following statistical test between:
-    H0: sig(f) ~ N(E,1)
-    H1: sig(f) ~ N(E,1) + FRB with A(f) that have secondary spectrum (DFT(A(f))
-    with freq cutoff ff0
+    Whereas the diffuse Kalman contrast statistic applies a smooth Lorentzian
+    Wiener low-pass filter ``lambda_j(q) = q / (q + 4 sin^2(pi j / 2 N))`` in
+    the non-periodic DCT-II basis and bridges masked channel gaps coherently,
+    this function tests a sharp top-hat low-pass cutoff ``1 <= k <= M`` in the
+    periodic DFT basis under an unmasked i.i.d. ``N(E, 1)`` null.
     """
     signal = np.divide(
         spec,
         spec_std,
-        out=np.zeros_like(spec),
+        out=np.zeros_like(spec, dtype=np.float64),
         where=~np.isclose(spec_std, 0, atol=mask_tol),
     )
     fft_sig = np.abs(np.fft.rfft(signal)) ** 2
     score_arr = np.cumsum(fft_sig[1:] / (len(signal) / 2))
     dof_arr = 2 * np.arange(1, len(score_arr) + 1)
     significance_arr = stats.chi2.logsf(score_arr, dof_arr)
-    return np.min(significance_arr)
+    min_sig = float(np.min(significance_arr))
+    if trials_corrected:
+        return sidak_logsf(min_sig, len(significance_arr))
+    return min_sig

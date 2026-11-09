@@ -72,6 +72,7 @@ include = [
     "src/**/*.py",
     "src/**/*.pyi",
     "tests/**/*.py",
+    "examples/**/*.py",
 ]
 line-length = 88
 indent-width = 4
@@ -97,16 +98,21 @@ convention = "numpy"
 [tool.ruff.lint.per-file-ignores]
 "src/kalman_detector/svm.py" = ["N806"]
 "tests/**/*.py" = ["S101", "FBT", "PLR2004", "PT011", "SLF001", "N806"]
+"examples/**/*.py" = ["INP001", "T201"]
 
 [tool.ty.environment]
 python-version = "3.12"
 
 [tool.ty.src]
-include = ["src"]
+include = ["src", "examples"]
 exclude = ["tests"]
 
 [tool.ty.rules]
 not-iterable = "ignore" # Numba prange and some ndarray protocols
+
+[[tool.ty.overrides]]
+include = ["examples/**"]
+rules = { import-not-found = "ignore" }
 
 [tool.pytest.ini_options]
 minversion = "9.0"

@@ -347,6 +347,11 @@ class TestSecondarySpectrym:
             scores_arr.append(score)
         score_mean = utils.get_snr_from_logsf(np.array(scores_arr).mean())
         np.testing.assert_allclose(score_mean, target_snr, rtol=0.2)
+        raw_sig = secondary_spectrum_cumulative_chi2_score(spec, spec_std)
+        corr_sig = secondary_spectrum_cumulative_chi2_score(
+            spec, spec_std, trials_corrected=True
+        )
+        assert corr_sig > raw_sig
 
 
 class TestOffPulseAnchor:
